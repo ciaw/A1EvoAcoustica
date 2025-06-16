@@ -3105,7 +3105,7 @@ async function multipleSubs(indices) {
   let allResponses = await fetchREW();
   let nTotal = Object.keys(allResponses).length;
   await fetchREW(nTotal, 'PUT', {title: "SW1o"});
-  if (!isAutomated && isGriffin) {
+  if (isAutomated && isGriffin) {
     adjustSubsVolume = - 20 * Math.log10(nSubs) + nSubs * (10 ** (-0.44999998807907104 / 4));
     await postNext('Add SPL offset', nTotal, {offset: adjustSubsVolume});
   }

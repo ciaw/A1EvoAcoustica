@@ -1262,18 +1262,17 @@ async function checkAutomatedMeasurements(){
     if (priorityA !== priorityB) {
       return priorityA - priorityB;
     }
-    if (priorityA === 100) {
-      const subA_match = titleA.match(/^SW(\d+)/);
-      const subB_match = titleB.match(/^SW(\d+)/);
+     if (priorityA === 100) {
+      const subA_match = titleA.match(/^SW(\d)/);
+      const subB_match = titleB.match(/^SW(\d)/);
       if (!subA_match || !subB_match) return naturalStringCompare(titleA, titleB);
       const subA = parseInt(subA_match[1], 10);
       const subB = parseInt(subB_match[1], 10);
       if (subA !== subB) return subA - subB;
-      const measA = parseInt((titleA.match(/\d+$/) || ['0'])[0], 10);
-      const measB = parseInt((titleB.match(/\d+$/) || ['0'])[0], 10);
+      const measA = parseInt(titleA.substring(3), 10);
+      const measB = parseInt(titleB.substring(3), 10);
       return measA - measB;
     }
-
     return naturalStringCompare(titleA, titleB);
   });
   let newIndex = nTotal + 1;
@@ -1421,14 +1420,15 @@ async function checkRewMeasurements(){
       return priorityA - priorityB;
     }
     if (priorityA === 100) {
-      const subA_match = titleA.match(/^SW(\d+)/);
-      const subB_match = titleB.match(/^SW(\d+)/);
+      const subA_match = titleA.match(/^SW(\d)/);
+      const subB_match = titleB.match(/^SW(\d)/);
       if (!subA_match || !subB_match) return naturalStringCompare(titleA, titleB);
       const subA = parseInt(subA_match[1], 10);
       const subB = parseInt(subB_match[1], 10);
       if (subA !== subB) return subA - subB;
-      const measA = parseInt((titleA.match(/\d+$/) || ['0'])[0], 10);
-      const measB = parseInt((titleB.match(/\d+$/) || ['0'])[0], 10);
+      // CHANGED: The measurement index is the part after the 'SW' and sub digit (e.g., after 'SW1').
+      const measA = parseInt(titleA.substring(3), 10);
+      const measB = parseInt(titleB.substring(3), 10);
       return measA - measB;
     }
     return naturalStringCompare(titleA, titleB);

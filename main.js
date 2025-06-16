@@ -3044,7 +3044,7 @@ async function runMeasurementProcess() {
                             impulseFloats[i] *= responseCoef;
                         }
                     }
-                    if (impulseFloats.length > 0 && !impulseFloats.some(sample => sample !== 0)) console.warn(`WARNING: Received an all-zero (silent) response for ${channel.commandId}. The channel may be disconnected or muted. MEASUREMENT IS INVALID!`);
+                    if (impulseFloats.length > 0 && !impulseFloats.some(sample => sample !== 0)) console.warn(`WARNING: Received an all-zero (silent) response for ${channel.commandId}. Check if the microphone or the speaker is connected! MEASUREMENT IS INVALID!`);
                     allPositionsData[`position${currentPosition}`][channel.commandId] = impulseFloats;
                     console.log(` -> Successfully retrieved ${impulseFloats.length} samples for ${channel.commandId}.`);
                     await delay(500);

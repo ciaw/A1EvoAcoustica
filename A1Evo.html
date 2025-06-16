@@ -683,7 +683,7 @@ and noninfringement. Use at your own risk.
   <span id="bassFillValue">0 dB</span>
   </div>
   <div class="tooltip-container">
-  <input type="range" id="bassFillSlider" class="slider" min="-10" max="10" step="0.5" value="0">
+  <input type="range" id="bassFillSlider" class="slider" min="-6" max="6" step="0.5" value="0">
   <div class="tooltip">Subwoofer level adjustment offset to compensate for gaps below the target curve</div>
   </div></div>
   </div></div>
@@ -770,7 +770,7 @@ and noninfringement. Use at your own risk.
   <label class="checkbox-label">
   <input type="checkbox" id="prioCenter">Center blend mode
   </label>
-  <div class="tooltip">Add center speaker to front sound stage optimization. Will force identical crossovers for LCR.</div>
+  <div class="tooltip">Add center speaker to sound stage optimization. Overrides center speaker sliders and forces identical LCR xovers.</div>
   </div>
   <div class="tooltip-container">
   <label class="checkbox-label">
@@ -779,10 +779,10 @@ and noninfringement. Use at your own risk.
   <div class="tooltip">Evaluate and add allpass filters to minimize dips below target curve</div>
   </div>
   <div class="tooltip-container">
-  <label class="checkbox-label" style="border-bottom: 2px solid #e74c3c; width: fit-content;">
-  <input type="checkbox" id="weakBass">Bass was too weak!
+  <label class="checkbox-label">
+  <input type="checkbox" id="weakBass" disabled>Enable double bass
   </label>
-  <div class="tooltip">Atempt to fix sub(s) measurement volume offset problems</div>
+  <div class="tooltip">Set 'LFE + Main' bass mode and front speakers as 'full range'</div>
   </div>
   </div>
   <div class="rolloff-wrapper tooltip-container">
@@ -819,7 +819,7 @@ and noninfringement. Use at your own risk.
   </div></div>
 </script><script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/14.0.1/math.min.js"></script><script>
 
-const evoVersion = "7.3";
+const evoVersion = "7.4";
 const baseUrl = 'http://localhost:4735/measurements', speedDelay = 255, maxDistanceLimit = 7.35;
 let micCalFile = new Array(16384).fill(0), audioCtx = null;
 let jsonName = 'receiver_config.avr', jsonType = 'avr', jsonContent = null;
@@ -1465,7 +1465,7 @@ async function main(){
     levelLowVol: `Low volume listening level offset (dB): `,
     enableInversion: `Out of phase 'Speaker' detection and automatic inversion? `,
     addCenter: 'Center speaker prioritized in subwoofer alignment? ',
-    enableWeakBass: `Applied SPL offset fix to subwoofer measurements? `,
+    enableWeakBass: `Double Bass (LFE + Main mode) activated? `,
     noAllpass: `Allpass filters enabled? `,
     minFreqFR: `Minimum searchable crossover frequency - front mains: `,
     maxFreqFR: `Maximum searchable crossover frequency - front mains: `,
@@ -1555,7 +1555,7 @@ async function checkREW() {
         const major = parseInt(versionMatch[1], 10);
         const minor = parseInt(versionMatch[2], 10);
         const beta = parseInt(versionMatch[3], 10);
-        const versionOK = major > 5 || (major === 5 && minor > 40) || (major === 5 && minor === 40 && beta >= 86);
+        const versionOK = major > 5 || (major === 5 && minor > 40) || (major === 5 && minor === 40 && beta >= 89);
         if (!versionOK) {
           console.error(`Installed REW version (${versionString}) is outdated and incompatible with A1 Evo! Please install the latest REW Beta from https://www.avnirvana.com/threads/rew-api-beta-releases.12981/.`);
           throwError();
@@ -1852,7 +1852,6 @@ async function secondary(){
      }
   } else {
      customInvert[nSpeakers + 1] = false;
-     if (enableWeakBass) await postNext('Add SPL offset', nSpeakers + 1, {offset: -10});
   }}
 async function syncPeaks(indices, name = null) {
   await postNext('Cross corr align', indices);
@@ -3106,8 +3105,8 @@ async function multipleSubs(indices) {
   let allResponses = await fetchREW();
   let nTotal = Object.keys(allResponses).length;
   await fetchREW(nTotal, 'PUT', {title: "SW1o"});
-  if (enableWeakBass) {// possible sub measurements volume level offset problem!
-    adjustSubsVolume = -20 * Math.log10(nSubs);
+  if (!isAutomated && isGriffin) {
+    adjustSubsVolume = - 20 * Math.log10(nSubs) + nSubs * (10 ** (-0.44999998807907104 / 4));
     await postNext('Add SPL offset', nTotal, {offset: adjustSubsVolume});
   }
   console.info(`Subwoofers ${Array.from({length: nSubs}, (_, i) => `SW${i+1}`).join(', ').replace(/, ([^,]*)$/, ' and $1')} time aligned, level matched and summed.`);
@@ -3813,7 +3812,7 @@ function readContents() {
                          "SR8012", "SR8015" ];
   const modelsCirrusLogic = [ "-S720W", "-S920W", "X1300W", "X2300W", "X3300W", "NR1607", "SR5011", "-S730H", "-S740H", "-S750H", "-S760H", "-S930H", "-S940H", "-S950H",
                               "-S960H", "X1400H", "X1500H", "X1600H", "X1700H", "X2400H", "X2500H", "X2600H", "X2700H", "X3400H", "X3500H", "X3600H", "NR1608", "NR1609",
-                              "NR1710", "NR1711", "SR5012", "SR5013", "SR5014", "SR5015", "SR6013", "SR6014", "-S770H", "-S970H", "X1800H", "X2800H", "EMA 60", "MA 70s" ];
+                              "NR1710", "NR1711", "SR5012", "SR5013", "SR5014", "SR5015", "SR6013", "SR6014", "-S770H", "-S970H", "X1800H", "X2800H", "EMA 60", "MA 70S" ];
   const modelsNo180xo = [ "-S720W", "-S920W", "X1300W", "X2300W", "X3300W", "NR1607", "SR5011", "SR6011", "X6500H", "-S730H", "-S740H", "-S930H", "-S940H",
                           "X1400H", "X1500H", "X2400H", "X2500H", "X3400H", "X3500H", "X4300H", "X4400H", "X4500H", "X6300H", "X6400H", "X6500H", "AV7703",
                           "AV7704", "AV7705", "NR1608", "NR1609", "SR5012", "SR5013", "SR6012", "SR6013", "SR7011", "SR7012", "SR7013", "SR8012" ];

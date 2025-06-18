@@ -3,7 +3,8 @@
 Copyright (c) 2025 OCA (https://www.youtube.com/@OCAudiophile)
 All rights reserved.
 
-This software is free to use and is licensed under the following terms:
+This software is free to use and is licensed un
+der the following terms:
 
 Permission is granted to:
 
@@ -780,9 +781,9 @@ and noninfringement. Use at your own risk.
   </div>
   <div class="tooltip-container">
   <label class="checkbox-label">
-  <input type="checkbox" id="weakBass" disabled>Enable double bass
+  <input type="checkbox" id="weakBass">Enable double bass
   </label>
-  <div class="tooltip">Set 'LFE + Main' bass mode and front speakers as 'full range'</div>
+  <div class="tooltip">Set 'LFE + Main' bass mode and front mains as 'full range'</div>
   </div>
   </div>
   <div class="rolloff-wrapper tooltip-container">
@@ -819,7 +820,7 @@ and noninfringement. Use at your own risk.
   </div></div>
 </script><script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/14.0.1/math.min.js"></script><script>
 
-const evoVersion = "7.4";
+const evoVersion = "8";
 const baseUrl = 'http://localhost:4735/measurements', speedDelay = 255, maxDistanceLimit = 7.35;
 let micCalFile = new Array(16384).fill(0), audioCtx = null;
 let jsonName = 'receiver_config.avr', jsonType = 'avr', jsonContent = null;
@@ -828,7 +829,7 @@ let nSpeakers = null, nSubs = null, subMinTrim = -12, subMaxTrim = 12, lpf4LFE, 
 let customLevel = [], commandId = [], customDistance = [], customInvert = [], customCrossover = [], customFilter = [], deqFilter = [], subTrim = [], customMinFreq = [], customMaxFreq = [], customMinFreqFR = [], customMaxFreqFR = [], customMinFreqC = [], customMaxFreqC = [],customMargin = [], subAllPassQ = null, allpassQ = [], hiPass, hType;
 const defaultSlope = "L-R4";
 const dbValues = [-12, -15, -18, -20, -25];
-var subBoost = 0, bassFill = 0, levelLowVol = 2, enableInversion = false, addCenter = false, enableWeakBass = false, noAllpass = false, minFreq = 40, maxFreq = 250, minFreqFR = 40, maxFreqFR = 250, minFreqC = 40, maxFreqC = 250,  subRolloffEnabled = false, subRolloffFreq = null, subRolloffSlope = defaultSlope, lpf4lfeValue = null;
+var subBoost = 0, bassFill = 0, levelLowVol = 2, enableInversion = false, addCenter = false, forceLarge = false, noAllpass = false, minFreq = 40, maxFreq = 250, minFreqFR = 40, maxFreqFR = 250, minFreqC = 40, maxFreqC = 250,  subRolloffEnabled = false, subRolloffFreq = null, subRolloffSlope = defaultSlope, lpf4lfeValue = null;
 
 function toggleExpertDrawer() {
   const drawer = document.getElementById('expertDrawer');
@@ -1457,15 +1458,15 @@ async function main(){
   measurementChoice.classList.add('transitioned');
   const startTime = performance.now();
   console.infoBold(`** Customizations start **`);
-  const defaults = {subBoost: 0, bassFill: 0, levelLowVol: 2, enableInversion: false, addCenter: false, enableWeakBass: false, noAllpass: false, minFreq: 40, maxFreq: 250, minFreqFR: 40, maxFreqFR: 250, minFreqC: 40, maxFreqC: 250};
-  const customizations = {subBoost, bassFill, levelLowVol, enableInversion, addCenter, enableWeakBass, noAllpass, minFreq, maxFreq, minFreqFR, maxFreqFR, minFreqC, maxFreqC};
+  const defaults = {subBoost: 0, bassFill: 0, levelLowVol: 2, enableInversion: false, addCenter: false, forceLarge: false, noAllpass: false, minFreq: 40, maxFreq: 250, minFreqFR: 40, maxFreqFR: 250, minFreqC: 40, maxFreqC: 250};
+  const customizations = {subBoost, bassFill, levelLowVol, enableInversion, addCenter, forceLarge, noAllpass, minFreq, maxFreq, minFreqFR, maxFreqFR, minFreqC, maxFreqC};
   const descriptions = {
     subBoost: `Subwoofer EQ filters maximum allowed boost (dB): `,
     bassFill: `Subwoofer target curve infill value (dB): `,
     levelLowVol: `Low volume listening level offset (dB): `,
     enableInversion: `Out of phase 'Speaker' detection and automatic inversion? `,
     addCenter: 'Center speaker prioritized in subwoofer alignment? ',
-    enableWeakBass: `Double Bass (LFE + Main mode) activated? `,
+    forceLarge: `Double bass mode ('LFE + Main') activated? `,
     noAllpass: `Allpass filters enabled? `,
     minFreqFR: `Minimum searchable crossover frequency - front mains: `,
     maxFreqFR: `Maximum searchable crossover frequency - front mains: `,
@@ -1716,7 +1717,7 @@ async function ocAced() {
             line-height: 1.6; 
             color: #E2E8F0;
           ">
-            Multiple microphone positions were processed. Would you like to save the current state to avoid redundant processing in future optimization runs? REW file 
+            Multiple microphone positions were processed. Would you like to save the current state and use that file going forward to avoid redundant processing in future optimization runs? REW file 
             <strong>'Pre-processed_Measurements_[timestamp].mdat'</strong> 
             will be saved in the 'A1 Evo Acoustica' folder.
           </p>
@@ -2475,13 +2476,22 @@ async function sortBass() {
   console.info('Bass system optimization completed!');}
 async function alignFronts() {
   const sp1 = 1, sp2 = 2, sp3 = 3, sw1 = nSpeakers + 1;
-  if (addCenter && commandId[3] != "C") {
-    console.warn(`There's no 'Center' speaker to prioritize, user option dismissed!`);
+  if (forceLarge && addCenter) {
+    console.warn(`'LFE + Main' mode is active, center speaker will be excluded from front sound stage optimization`);
     addCenter = false;
   }
-  if (addCenter && (minFreqFR !== minFreqC || maxFreqFR !== maxFreqC)) console.warn(`Front speakers' crossover customization will override center speaker crossover customization!`);
+  if (addCenter && commandId[3] != "C") {
+    console.warn(`There's no 'Center' speaker to prioritize (check the 3rd row in REW!), user option dismissed!`);
+    addCenter = false;
+  }
+  if (!forceLarge && addCenter && (minFreqFR !== minFreqC || maxFreqFR !== maxFreqC)) console.warn(`Front speakers' crossover customization will override center speaker crossover customization!`);
   const speakerSet = addCenter ? "Front L/C/R" : "Front L/R";
-  const subAmplitudeScalingFactor = addCenter ? 3 : 2;
+  let subAmplitudeScalingFactor;
+  if (forceLarge) {
+    subAmplitudeScalingFactor = 1;
+  } else {
+    subAmplitudeScalingFactor = addCenter ? 3 : 2;
+  }
   const indicesToCleanInThisContext = [sp1, sp2, sw1];
   if (addCenter) indicesToCleanInThisContext.push(sp3);
   let maxSumPower = -Infinity;
@@ -2501,16 +2511,22 @@ async function alignFronts() {
   let apfQValues = [0, 0.5773502692, 0.7071067812, 1.0, 1.414213562];
   if (!noAllpass) apfQValues = [0];
   console.info(`Brute force searching optimal ${speakerSet} + Sub configuration...`);
-  const optimizationStartFreq = 20;
+  if (forceLarge) {
+    console.info(`'LFE + Main' mode is active: Optimizing subwoofer low-pass filter (bass extraction) frequency with full-range front speakers.`);
+    const minF = minFreqFR ?? 40;
+    const maxF = maxFreqFR ?? 250;
+    console.info(`Subwoofer bass extraction frequency search range is: ${minF}Hz - ${maxF}Hz.`);
+  }
+  const optimizationStartFreq = 16;
   const optimizationEndFreq = 320;
   let bestOverallSumPower = -Infinity, bestOverallConfig = null;
   const freqResults = [];
   for (const freq of xoCandidates) {
-    let speaker1_postXO = await fetchResponse(sp1, freq, false, true, 0);
-    let speaker2_postXO = await fetchResponse(sp2, freq, false, true, 0);
+    let speaker1_postXO = await fetchResponse(sp1, forceLarge ? 0 : freq, false, true, 0, !forceLarge);
+    let speaker2_postXO = await fetchResponse(sp2, forceLarge ? 0 : freq, false, true, 0, !forceLarge);
     let speaker3_postXO, spk3Complex;
     if (addCenter) {
-      speaker3_postXO = await fetchResponse(sp3, freq, false, true, 0);
+      speaker3_postXO = await fetchResponse(sp3, forceLarge ? 0 : freq, false, true, 0, !forceLarge);
       spk3Complex = [];
       for (let i = 0; i < speaker3_postXO.magnitude.length; i++) {
         const amp = dB2Amp(speaker3_postXO.magnitude[i]);
@@ -2531,7 +2547,7 @@ async function alignFronts() {
       spk2Complex.push({real: amp * Math.cos(phase), imag: amp * Math.sin(phase)});
     }
     for (const currentQ of apfQValues) {
-      let sub_postXO = await fetchResponse(sw1, freq, true, true, currentQ);
+      let sub_postXO = await fetchResponse(sw1, freq, true, true, currentQ, true);
       const subRawAmpPhase = [];
       for (let i = 0; i < sub_postXO.magnitude.length; i++) subRawAmpPhase.push({amp: dB2Amp(sub_postXO.magnitude[i]), phase: toRad(sub_postXO.phase[i])});
       let bestConfigForFreq = {sumPower: -Infinity};
@@ -2597,13 +2613,17 @@ async function alignFronts() {
     for (let i = 1; i < uniqueBestResults.length; i++) {if (uniqueBestResults[i].overallMagEstimate > overallBestResult.overallMagEstimate) overallBestResult = uniqueBestResults[i];}
   }
   if (bestOverallConfig) {
-    noAllpass ? console.infoBold(`Best ${speakerSet} + subwoofer configuration => Xover: ${bestOverallConfig.freq}Hz | Applied delay: ${(bestOverallConfig.ts * 1000).toFixed(4)}ms | Subwoofer inverted: ${bestOverallConfig.subInverted}| Allpass filter Q: ${(bestOverallConfig.apfQ).toFixed(4)}`) :
-    console.infoBold(`Best ${speakerSet} + subwoofer configuration => Xover: ${bestOverallConfig.freq}Hz | Applied delay: ${(bestOverallConfig.ts * 1000).toFixed(4)}ms | Subwoofer inverted: ${bestOverallConfig.subInverted}`);
+    if (forceLarge) {
+        console.infoBold(`'Double bass mode' result: Front main speakers set to full-range | Best Sub LPF: ${bestOverallConfig.freq}Hz | Applied delay: ${(bestOverallConfig.ts * 1000).toFixed(4)}ms | Subwoofer inverted: ${bestOverallConfig.subInverted}`);
+    } else {
+        noAllpass ? console.infoBold(`Best ${speakerSet} + subwoofer configuration => Xover: ${bestOverallConfig.freq}Hz | Applied delay: ${(bestOverallConfig.ts * 1000).toFixed(4)}ms | Subwoofer inverted: ${bestOverallConfig.subInverted}| Allpass filter Q: ${(bestOverallConfig.apfQ).toFixed(4)}`) :
+        console.infoBold(`Best ${speakerSet} + subwoofer configuration => Xover: ${bestOverallConfig.freq}Hz | Applied delay: ${(bestOverallConfig.ts * 1000).toFixed(4)}ms | Subwoofer inverted: ${bestOverallConfig.subInverted}`);
+    }
     customCrossover[sp1] = bestOverallConfig.freq;
     customCrossover[sp2] = bestOverallConfig.freq;
     if (addCenter) customCrossover[sp3] = bestOverallConfig.freq;
     subAllPassQ = bestOverallConfig.apfQ;
-    await postNext('Offset t=0', nSpeakers + 1, { offset: bestOverallConfig.ts, unit: "seconds" });
+    await postNext('Offset t=0', nSpeakers + 1, {offset: bestOverallConfig.ts, unit: "seconds"});
     let minDist = Infinity;
     for (let i = 1; i <= nSpeakers + nSubs; i++) {
       if (i > nSpeakers) {
@@ -2639,7 +2659,12 @@ async function alignFronts() {
     i += isPair ? 2 : 1;
   }
   console.infoBold("Final crossover and polarity settings:");
-  for (let i = 1; i <= nSpeakers; i++) console.log(`${commandId[i]}: ${customCrossover[i]}Hz, polarity inverted? ${customInvert[i]}`);
+  if (!forceLarge) {
+    for (let i = 1; i <= 2; i++) console.log(`${commandId[i]}: ${customCrossover[i]}Hz, polarity inverted? ${customInvert[i]}`)
+  } else {
+    for (let i = 1; i <= 2; i++) console.log(`${commandId[i]}: Full range / Large (Bass extraction frequency: ${customCrossover[i]}Hz), polarity inverted? ${customInvert[i]}`);
+  };
+  for (let i = 3; i <= nSpeakers; i++) console.log(`${commandId[i]}: ${customCrossover[i]}Hz, polarity inverted? ${customInvert[i]}`);
   for (let i = nSpeakers + 1; i <= nSpeakers + nSubs; i++) console.log(`${commandId[i]}, polarity inverted? ${customInvert[i]}`);
   if (customInvert.some(Boolean)) console.warn("Polarity inversion(s) will be applied automatically by A1 Evo Acoustica!");}
 function freqToIndex(freq, startFreq, ppo, totalPoints) {
@@ -2660,10 +2685,10 @@ function b64ToFloat32ArrayBE(base64) {
     swapped[i + 3] = uint8[i];
   }
   return new Float32Array(swapped.buffer);}
-async function fetchResponse(index, xoFreq, isSub = false, uPPO = false, allpassQ = 0) {
+async function fetchResponse(index, xoFreq, isSub = false, uPPO = false, allpassQ = 0, applyXoFilter = true) {
   const filters = [{
     index: 21,
-    enabled: true,
+    enabled: applyXoFilter,
     isAuto: false,
     frequency: xoFreq,
     shape: isSub ? 'L-R' : 'BU',
@@ -2915,7 +2940,7 @@ async function refResults(){
   for (let i = 1; i <= nSpeakers; i++) {
     console.info(`${commandId[i]}`);
     const filteredSub = await generateRoll(customCrossover[i], nSpeakers + 4, true);
-    const filteredSpeaker = await generateRoll(customCrossover[i], i)
+    const filteredSpeaker = await generateRoll((forceLarge && i <= 2) ? 0 : customCrossover[i], i)
     const spResponse = await postNext("Vector sum", [filteredSpeaker, filteredSub]);
     await new Promise((resolve) => setTimeout(resolve, speedDelay));
     const responseKey = parseInt(Object.keys(spResponse.results)[0], 10);
@@ -3106,7 +3131,8 @@ async function multipleSubs(indices) {
   let nTotal = Object.keys(allResponses).length;
   await fetchREW(nTotal, 'PUT', {title: "SW1o"});
   if (isAutomated && isGriffin) {
-    adjustSubsVolume = - 20 * Math.log10(nSubs) + nSubs * (10 ** (-0.44999998807907104 / 4));
+    //adjustSubsVolume = - 20 * Math.log10(nSubs) + nSubs * (10 ** (-0.44999998807907104 / 4));
+    adjustSubsVolume = - 20 * Math.log10(nSubs);
     await postNext('Add SPL offset', nTotal, {offset: adjustSubsVolume});
   }
   console.info(`Subwoofers ${Array.from({length: nSubs}, (_, i) => `SW${i+1}`).join(', ').replace(/, ([^,]*)$/, ' and $1')} time aligned, level matched and summed.`);
@@ -3448,6 +3474,7 @@ async function generateOCA() {
     baseOca.model = jsonContent.targetModelName;
     baseOca.eqType = jsonContent.enMultEQType;
     baseOca.hasGriffinLiteDSP = isGriffin;
+    baseOca.isNewModel = sOs === 343;
     baseOca.ampAssign = jsonContent.ampAssign;
     baseOca.ampAssignInfo = jsonContent.ampAssignInfo;
     baseOca.channels = jsonContent.detectedChannels.map(detectedChannel => {
@@ -3457,7 +3484,14 @@ async function generateOCA() {
       const filter = customFilter[commandIdIndex];
       const filterLV = deqFilter[commandIdIndex];
       let crossover = customCrossover[commandIdIndex];
-      let speakerType = detectedChannel.commandId.startsWith("SW") ? "E" : "S";
+      let speakerType;
+      if ((detectedChannel.commandId === "FL" || detectedChannel.commandId === "FR") && forceLarge) {
+        speakerType = "L";
+      } else if (detectedChannel.commandId.startsWith("SW")) {
+        speakerType = "E";
+      } else {
+        speakerType = "S";
+      }
       const channel = {
       speakerType: speakerType,
       distanceInMeters: distanceInMeters,
@@ -3471,6 +3505,7 @@ async function generateOCA() {
     });
     baseOca.numberOfSubwoofers = nSubs;
     baseOca.lpfForLFE = lpf4LFE;
+    baseOca.bassMode = forceLarge ? "L+M" : "LFE";
     let ocafileName;
     !subRolloffEnabled ? ocafileName = `${timestamp}_${tcName}_swFill${bassFill}_eqBoost${subBoost}_lowVolOffset${dbValues[levelLowVol]}_A1EvoAcoustica_${evoVersion}.oca` :
     ocafileName = `${timestamp}_${tcName}_swFill${bassFill}_eqBoost${subBoost}_swRoll${subRolloffFreq}_${subRolloffSlope}_lowVolOffset${dbValues[levelLowVol]}_A1EvoAcoustica_${evoVersion}.oca`;
@@ -3586,7 +3621,7 @@ document.addEventListener('DOMContentLoaded', () => {
   UpdateMaxFreqC(maxFreqC, true);
   UpdateenableInversion(enableInversion, false);
   UpdateaddCenter(addCenter, false);
-  UpdateisWeakBass(enableWeakBass, false);
+  UpdateisWeakBass(forceLarge, false);
   UpdateAllPass(noAllpass, false);
   document.getElementById('bassFillSlider').addEventListener('input', function (e) {
     const normalizedValue = e.target.value.replace(',', '.');
@@ -3637,6 +3672,21 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   document.getElementById('weakBass').addEventListener('change', function (event) {
     UpdateisWeakBass(event.target.checked, false);
+    const minFreqLabel = document.getElementById('minFreqSliderFR').closest('.crossover-slider').querySelector('.slider-label span:first-child');
+    const maxFreqLabel = document.getElementById('maxFreqSliderFR').closest('.crossover-slider').querySelector('.slider-label span:first-child');
+    const minFreqTooltip = document.getElementById('minFreqSliderFR').closest('.tooltip-container').querySelector('.tooltip');
+    const maxFreqTooltip = document.getElementById('maxFreqSliderFR').closest('.tooltip-container').querySelector('.tooltip');
+    if (event.target.checked) {
+      minFreqLabel.textContent = "Minimum bass extraction lpf frequency - Subwoofer";
+      maxFreqLabel.textContent = "Maximum bass extraction lpf frequency - Subwoofer";
+      minFreqTooltip.textContent = "Select minimum search frequency for subwoofer lowpass filter optimization";
+      maxFreqTooltip.textContent = "Select maximum search frequency for subwoofer lowpass filter optimization";
+    } else {
+      minFreqLabel.textContent = "Minimum crossover frequency - Front mains";
+      maxFreqLabel.textContent = "Maximum crossover frequency - Front mains";
+      minFreqTooltip.textContent = "Select mimimum search frequency for front speakers crossover optimization";
+      maxFreqTooltip.textContent = "Select maximum search frequency for front speakers crossover optimization";
+    }
   });
   document.getElementById('disableAllPass').addEventListener('change', function (event) {
     UpdateAllPass(event.target.checked, false);
@@ -3969,7 +4019,7 @@ function UpdateMaxFreqC(maxFreqHzC, syncSlider) {
     }
   }}
 function UpdateisWeakBass(disableWB, syncToggle) {
-  enableWeakBass = disableWB;
+  forceLarge = disableWB;
   if (syncToggle) {
     document.getElementById('weakBass').checked = disableWB;
   }}

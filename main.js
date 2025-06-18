@@ -29,6 +29,14 @@ const TRANSFER_CONFIG = {
         nonAckPacket: 50, 
         power: 12500
     }};
+const TELNET_CONFIG = {
+    connectTimeout: 5000,
+    commandTimeout: 3000,
+    queryResponseTimeout: 3500,
+    presetQueryTimeout: 5000,
+    powerOnDelay: 5000,
+    setCommandSettleTime: 750,
+    maxRetries: 0,};
 const MEASUREMENT_CONFIG = {
     timeouts: {
         connect: 5000,
@@ -861,12 +869,10 @@ async function runFullDiscoveryAndSave(interactive = true) {
         console.log(`UPnP Discovery finished. Found ${devices.length} distinct device description(s).`);
         const potentialAvrs = devices.filter(dev => 
             dev.address && 
-            (
-                (dev.usn && /Receiver|AVR|Sound(_Sys|Bar)/i.test(dev.usn)) || 
-                /(Denon|Marantz)/i.test(dev.manufacturer || '') || 
-                (/AVR|Receiver|SR|NR|AV|Cinema|Sound(_Sys|Bar)/i.test(dev.modelName || '') && !/MediaRenderer|MediaServer|NetworkAudio|Speaker/i.test(dev.modelName || '')) ||
-                (/AVR|Receiver|SR|NR|AV|Cinema|Sound(_Sys|Bar)/i.test(dev.friendlyName || '') && !/MediaRenderer|MediaServer|NetworkAudio|Speaker/i.test(dev.friendlyName || ''))
-            )
+            ((dev.usn && /Receiver|AVR|Sound(_Sys|Bar)/i.test(dev.usn)) || 
+            /(Denon|Marantz)/i.test(dev.manufacturer || '') || 
+            (/AVR|Receiver|SR|NR|AV|Cinema|Sound(_Sys|Bar)|DigitalMediaAdapter/i.test(dev.modelName || '') && !/MediaRenderer|MediaServer|NetworkAudio|Speaker/i.test(dev.modelName || '')) ||
+            (/AVR|Receiver|SR|NR|AV|Cinema|Sound(_Sys|Bar)|DigitalMediaAdapter/i.test(dev.friendlyName || '') && !/MediaRenderer|MediaServer|NetworkAudio|Speaker/i.test(dev.friendlyName || '')))
         );
         console.log(`Filtered down to ${potentialAvrs.length} potential AVR description(s).`);
         const groupedByIp = potentialAvrs.reduce((acc, device) => {
@@ -1621,7 +1627,7 @@ async function getAvrInfoAndStatusForTransfer(socket) {
         console.error(`Failed to get AVR status/info: ${error.message}`);
         throw new Error(`Failed during AVR status/info retrieval: ${error.message}`);
     }}
-async function sendTelnetCommands(ip, port = 23, lpf4LFE = 120) { 
+async function sendTelnetCommands2(ip, port = 23, lpf4LFE = 120, bassMode = "LFE", isNewModel = false, xOver = null) { 
     return new Promise((resolve, reject) => {
         const client = new net.Socket();
         let selectedPreset = null;
@@ -1734,15 +1740,32 @@ async function sendTelnetCommands(ip, port = 23, lpf4LFE = 120) {
             if (selectedPreset) {
                 commands.push(`SPPR ${selectedPreset}`); 
             };
-            commands.push('PSSWL OFF');
-            commands.push('PSSWL OFF');
-            commands.push('SSSWM LFE'); 
-            commands.push('SSSWO LFE');
-            commands.push('SSSWM LFE'); 
-            commands.push('SSSWO LFE');
-            const lpfFormatted = lpf4LFE.toString();
+            const lfeFormatted = bassMode.toString().trim();
+            if (!isNewModel) {
+                commands.push('PSSWL OFF');
+                commands.push('PSSWL OFF');
+                commands.push(`SSSWM ${lfeFormatted}`);
+                commands.push(`SSSWM ${lfeFormatted}`);
+                console.log(`Setting bass mode to: ${lfeFormatted}`);
+            } else {
+                commands.push(`SSSWO ${lfeFormatted}`);
+                commands.push(`SSSWO ${lfeFormatted}`);
+                console.log(`Setting bass mode to: ${lfeFormatted}`);
+                if (lfeFormatted === "L+M" && xOver != null) {
+                    const xoFormatted = xOver.toString().trim().padStart(3, '0');
+                    commands.push(`SSCFRFRO FUL`);
+                    commands.push(`SSCFRFRO FUL`);
+                    console.log(`Setting front speakers to full range`);
+                    commands.push(`SSBELFRO ${xoFormatted}`);
+                    commands.push(`SSBELFRO ${xoFormatted}`);
+                    console.log(`Setting front speakers' bass extraction frequency to: ${xoFormatted} Hz`);
+                }
+            }
+            const lpfFormatted = lpf4LFE.toString().trim();
             commands.push(`SSLFL ${lpfFormatted}`); 
-            commands.push(`SSLFL ${lpfFormatted}`); 
+            commands.push(`SSLFL ${lpfFormatted}`);
+            console.log(`Setting 'LPF for LFE' to: ${lpfFormatted} Hz`);
+            console.log('Double check the above settings have been correctly transferred from your AVR set up menu at the end!')
             let index = 0;
             function sendNext() {
                 if (index >= commands.length) { 
@@ -1762,6 +1785,327 @@ async function sendTelnetCommands(ip, port = 23, lpf4LFE = 120) {
             sendNext(); 
         }
     });}
+function askQuestion(query) {
+    const rl = readline.createInterface({
+        input: process.stdin,
+        output: process.stdout,
+    });
+    return new Promise(resolve => rl.question(query, ans => {
+        rl.close();
+        resolve(ans.trim());
+    }));}
+function escapeRegExp(string) {return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');}
+async function sendTelnetCommands(ip, port = 23, lpf4LFE = 120, bassMode = "LFE", isNewModel = false, xOver = null) {
+    let client = new net.Socket();
+    let RLine = null;
+    let commandResponseCallback = null;
+    let currentCommandTimeoutId = null;
+    let currentWaitingCommand = null;
+    let lastCommandSentTime = 0;
+    const connectPromise = new Promise((resolve, reject) => {
+        const timeoutId = setTimeout(() => {
+            if (client && !client.connecting && !client.destroyed) return;
+            const msg = `Telnet connection to ${ip}:${port} timed out after ${TELNET_CONFIG.connectTimeout}ms`;
+            console.error(msg);
+            if (client && !client.destroyed) client.destroy();
+            reject(new Error(msg));
+        }, TELNET_CONFIG.connectTimeout);
+        client.once('error', (err) => {
+            clearTimeout(timeoutId);
+            const msg = `Telnet connection error to ${ip}:${port}: ${err.message}`;
+            console.error(msg);
+            if (client && !client.destroyed) client.destroy();
+            reject(new Error(msg));
+        });
+        client.connect(port, ip, () => {
+            clearTimeout(timeoutId);
+            console.log(`Connected to ${ip}:${port}`);
+            client.on('error', (err) => {
+                console.error(`Telnet runtime error on ${ip}:${port}: ${err.message}. Current cmd: ${currentWaitingCommand || 'N/A'}`);
+            });
+            RLine = readline.createInterface({ input: client });
+            RLine.on('line', (line) => {
+                const trimmedLine = line.trim();
+                if (!trimmedLine) return;
+                const timeSinceLastTx = currentWaitingCommand ? (Date.now() - lastCommandSentTime) : -1;
+                const forCmdLog = currentWaitingCommand ? `(for "${currentWaitingCommand}", ${timeSinceLastTx}ms after TX)` : '(unsolicited)';
+                //console.log(`TELNET RX ${forCmdLog}: ${trimmedLine}`);
+                if (commandResponseCallback) {
+                    commandResponseCallback(trimmedLine);
+                }
+            });
+            resolve();
+        });});
+    async function executeCommand(command, expectedResponsePattern, timeout = TELNET_CONFIG.commandTimeout, retries = TELNET_CONFIG.maxRetries) {
+        if (!client || client.destroyed) { throw new Error("Telnet client is not connected or has been destroyed."); }
+        if (expectedResponsePattern === null) {
+            currentWaitingCommand = command + " (silent SET)";
+            lastCommandSentTime = Date.now();
+            //console.log(`TELNET TX (silent SET): ${command}`);
+            client.write(command + '\r');
+            currentWaitingCommand = null;
+            return Promise.resolve();
+        }
+        for (let attempt = 0; attempt <= retries; attempt++) {
+            let attemptCallback = null;
+            if (currentCommandTimeoutId) clearTimeout(currentCommandTimeoutId);
+            commandResponseCallback = null;
+            try {
+                return await new Promise((resolveRequest, rejectRequest) => {
+                    if (client.destroyed) {rejectRequest(new Error(`Telnet client destroyed before sending "${command}".`));
+                        return;}
+                    currentWaitingCommand = command;
+                    lastCommandSentTime = Date.now();
+                    //console.log(`TELNET TX: ${command} (Attempt ${attempt + 1})`);
+                    client.write(command + '\r');
+                    attemptCallback = (receivedLine) => {
+                        if (commandResponseCallback !== attemptCallback) {
+                            //if (command.startsWith("SPPR")) console.log(`DEBUG SPPR?: Stale attemptCallback for "${command}", received "${receivedLine}". Ignoring.`);
+                            return;
+                        }
+                        const isSPPR = command.startsWith("SPPR");
+                        //if (isSPPR) console.log(`DEBUG SPPR?: Active cb for "${command}", RX: "${receivedLine}", Pattern: ${expectedResponsePattern}`);
+                        let match = false;
+                        if (expectedResponsePattern instanceof RegExp) {
+                            match = expectedResponsePattern.test(receivedLine);
+                            //if (isSPPR) console.log(`DEBUG SPPR?: Regex test result for "${receivedLine}": ${match}`);
+                        } else if (typeof expectedResponsePattern === 'string') {
+                            match = receivedLine.toUpperCase().includes(expectedResponsePattern.toUpperCase());
+                            //if (isSPPR) console.log(`DEBUG SPPR?: String includes for "${receivedLine}": ${match}`);
+                        }
+                        if (match) {
+                            //if (isSPPR) console.log(`DEBUG SPPR?: MATCHED! Resolving for "${command}".`);
+                            clearTimeout(currentCommandTimeoutId);
+                            commandResponseCallback = null;
+                            currentWaitingCommand = null;
+                            resolveRequest(receivedLine);
+                        }
+                    };
+                    commandResponseCallback = attemptCallback;
+                    currentCommandTimeoutId = setTimeout(() => {
+                        if (commandResponseCallback === attemptCallback) {
+                            const isSPPR = command.startsWith("SPPR");
+                            //if (isSPPR) console.log(`DEBUG SPPR?: TIMEOUT FIRED for "${command}" (attempt ${attempt + 1}).`);
+                            const errorMsg = `Timeout (${timeout}ms) waiting for response to "${command}" (attempt ${attempt + 1})`;
+                            commandResponseCallback = null;
+                            currentWaitingCommand = null;
+                            rejectRequest(new Error(errorMsg));
+                        }
+                    }, timeout);
+                });
+            } catch (error) {
+                //console.warn(`Command "${command}" attempt ${attempt + 1}/${retries + 1} failed: ${error.message}`);
+                if (commandResponseCallback === attemptCallback) commandResponseCallback = null;
+                if (attempt === retries) {
+                    currentWaitingCommand = null;
+                    throw error;
+                }
+                await new Promise(res => setTimeout(res, 300 + attempt * 200));
+            }
+        }
+        currentWaitingCommand = null;
+        throw new Error(`Command "${command}" failed exhaustively in executeCommand.`);
+    }
+    try {
+        await connectPromise;
+        console.log('Checking power status...');
+        let powerStatusResponse = await executeCommand('ZM?', /ZM(ON|OFF)/i, TELNET_CONFIG.commandTimeout);
+        if (powerStatusResponse.toUpperCase().includes('ZMOFF')) {
+            console.log('Device is off. Turning on...');
+            await executeCommand('ZMON', /ZMON/i, TELNET_CONFIG.commandTimeout);
+            console.log(`Waiting ${TELNET_CONFIG.powerOnDelay / 1000}s for device to power up...`);
+            await new Promise(resolve => setTimeout(resolve, TELNET_CONFIG.powerOnDelay));
+            const newPowerStatus = await executeCommand('ZM?', /ZM(ON|OFF)/i, TELNET_CONFIG.commandTimeout);
+            if (!newPowerStatus.toUpperCase().includes('ZMON')) {
+                console.warn("Device reported not ON after ZMON attempt. Proceeding cautiously.");
+            } else {
+                console.log('Device confirmed ON.');
+            }
+        } else {
+            console.log('Device is on.');
+        }
+        let selectedPreset = null;
+        let currentAVRPreset = null;
+        console.log('Checking preset support...');
+        try {
+            const spprQueryPattern = /^SPPR\s*(1|2)(\r)?$/i;
+            const presetQueryResponse = await executeCommand(
+                'SPPR ?',
+                spprQueryPattern,
+                TELNET_CONFIG.presetQueryTimeout
+            );
+            const match = presetQueryResponse.match(spprQueryPattern);
+            if (match && match[1]) {
+                currentAVRPreset = match[1]; // Store '1' or '2'
+            } else {
+                console.warn(`WARN: SPPR ? response "${presetQueryResponse}" received but preset number not extracted. Assuming no presets.`);
+            }
+        } catch (error) {
+            if (error.message.includes('Timeout waiting for response to "SPPR ?"')) {
+                console.log('No response to "SPPR ?" (timeout), assuming AVR does not support multiple presets.');
+            } else {
+                console.warn(`Error during "SPPR ?" query: ${error.message}. Assuming no preset support.`);
+            }
+        }
+        if (currentAVRPreset) {
+            console.log(`Receiver is currently set to Preset ${currentAVRPreset}.`);
+            console.log("\n************************************************************");
+            console.log("****           PRESET SELECTION REQUIRED!               ****");
+            console.log("**** Look below for the input prompt. Press Enter to    ****");
+            console.log("**** use the current preset, or type 1 or 2.          ****");
+            console.log("************************************************************\n");
+            const answer = await askQuestion(`>>> Select preset to store calibration (${currentAVRPreset === '1' ? '1 or 2' : '2 or 1'}, Enter for current '${currentAVRPreset}'): `);
+            console.log("--- Preset selection received. Continuing... ---\n");
+            if (answer === '1' || answer === '2') {
+                selectedPreset = answer;
+            } else {
+                selectedPreset = currentAVRPreset;
+                console.log(`No specific preset chosen, or input invalid. Using current Preset ${currentAVRPreset}.`);
+            }
+            console.log(`Target Preset for calibration: ${selectedPreset}.`);
+            if (selectedPreset !== currentAVRPreset) {
+                console.log(`Changing AVR to Preset ${selectedPreset}...`);
+                try {
+                    await executeCommand(
+                        `SPPR ${selectedPreset}`,
+                        new RegExp(`^SPPR\\s*${selectedPreset}(\\r)?$`, "i"),
+                        TELNET_CONFIG.presetQueryTimeout
+                    );
+                    console.log(`Calibration will be transferred to Preset ${selectedPreset}.`);
+                } catch (error) {
+                    console.error(`ERROR: Failed to set AVR to Preset ${selectedPreset}: ${error.message}`);
+                    console.warn(`Calibration will proceed on current AVR Preset ${currentAVRPreset} instead of target ${selectedPreset}.`);
+                    selectedPreset = currentAVRPreset;
+                }
+            } else {
+                console.log(`AVR is already on the target Preset ${selectedPreset}. No change needed.`);
+            }
+        } else {
+            console.log('Proceeding without preset selection (AVR does not support multiple presets).');
+        }
+        console.log('Sending required calibration configuration commands...');
+        const audioCommandDefinitions = [];
+        const lfeFormatted = bassMode.toString().trim().toUpperCase();
+        const lpfValForCmd = lpf4LFE.toString().trim().padStart(3,'0');
+        if (!isNewModel) {
+            audioCommandDefinitions.push({
+                desc: 'Set Subwoofer Level to OFF (older models)',
+                cmdSet: 'PSSWL OFF',
+                expectsDirectEchoForSet: true
+            });
+            audioCommandDefinitions.push({
+                desc: `Set Bass Mode to ${lfeFormatted}`,
+                cmdSet: `SSSWM ${lfeFormatted}`,
+                cmdQuery: 'SSSWM ?',
+                verifyQueryPattern: new RegExp(`^SSSWM ${escapeRegExp(lfeFormatted)}(\\r)?$`, "i")
+            });
+            audioCommandDefinitions.push({
+                desc: `Set LPF for LFE to ${lpfValForCmd} Hz`,
+                cmdSet: `SSLFL ${lpfValForCmd}`,
+                cmdQuery: 'SSLFL ?',
+                verifyQueryPattern: new RegExp(`^SSLFL\\s?${escapeRegExp(lpfValForCmd)}(\\r)?$`, "i")
+            });
+        } else {
+            audioCommandDefinitions.push({
+                desc: `Set Subwoofer Mode to ${lfeFormatted}`,
+                cmdSet: `SSSWO ${lfeFormatted}`,
+                cmdQuery: 'SSSWO ?',
+                verifyQueryPattern: new RegExp(`^SSSWO ${escapeRegExp(lfeFormatted)}(\\r)?$`, "i")
+            });
+            if (lfeFormatted === "L+M" && xOver != null) {
+                const xoFormattedForCmd = xOver.toString().trim().padStart(3, '0');
+                audioCommandDefinitions.push({
+                    desc: `Set Front Speakers to Full Range`,
+                    cmdSet: `SSCFRFRO FUL`,
+                    expectsDirectEchoForSet: true
+                });
+                audioCommandDefinitions.push({
+                    desc: `Set Front Bass Extraction to ${xoFormattedForCmd} Hz`,
+                    cmdSet: `SSBELFRO ${xoFormattedForCmd}`,
+                    expectsDirectEchoForSet: true
+                });
+            }
+            audioCommandDefinitions.push({
+                desc: `Set LPF for LFE to ${lpfValForCmd} Hz`,
+                cmdSet: `SSLFL ${lpfValForCmd}`,
+                cmdQuery: 'SSLFL ?',
+                verifyQueryPattern: new RegExp(`^SSLFL\\s?${escapeRegExp(lpfValForCmd)}(\\r)?$`, "i"),
+            });
+        }
+        for (const cmdDef of audioCommandDefinitions) {
+            const {desc, cmdSet, cmdQuery, verifyQueryPattern, expectsDirectEchoForSet = false, directEchoPattern: explicitDirectEchoPatternFromDef } = cmdDef;
+            console.log(`Processing: ${desc}`);
+            let commandConfirmed = false;
+            if (expectsDirectEchoForSet) {
+                const patternForDirectEcho = explicitDirectEchoPatternFromDef instanceof RegExp
+                    ? explicitDirectEchoPatternFromDef
+                    : new RegExp(`^${escapeRegExp(cmdSet.replace(/\+/g, '\\+'))}`, "i");
+                try {
+                await executeCommand(cmdSet, patternForDirectEcho, TELNET_CONFIG.commandTimeout);
+                commandConfirmed = true;
+            } catch (error) {
+                if (!cmdQuery) {
+                    if (cmdSet === 'PSSWL OFF') {
+                        commandConfirmed = true;
+                    } else {
+                        console.error(`  ERROR: No query verification available for "${cmdSet}" after failed direct echo. Command may have failed.`);
+                    }
+                }
+            }
+            } else {
+                await executeCommand(cmdSet, null);
+                //console.log(`  SET command "${cmdSet}" sent (will verify with query if available).`);
+            }
+            if (cmdQuery && verifyQueryPattern && !commandConfirmed) {
+                 //console.log(`  Waiting ${TELNET_CONFIG.setCommandSettleTime}ms before querying for "${cmdSet}"...`);
+                await new Promise(resolve => setTimeout(resolve, TELNET_CONFIG.setCommandSettleTime));
+                //console.log(`  Querying with "${cmdQuery}"...`);
+                try {
+                    const timeoutForThisQuery = (cmdQuery === "SSBELFRO ?" || cmdQuery === "SSCFRFRO ?") ? Math.floor(TELNET_CONFIG.queryResponseTimeout * 1.5) : TELNET_CONFIG.queryResponseTimeout;
+                    const queryResponse = await executeCommand(cmdQuery, verifyQueryPattern, timeoutForThisQuery);
+                    //console.log(`  SUCCESS: Query for "${cmdSet}" confirmed value. Response: "${queryResponse}"`);
+                    commandConfirmed = true;
+                } catch (error) {
+                    //console.error(`  ERROR: Verification query FAILED for "${cmdSet}". Query "${cmdQuery}" response error: ${error.message}`);
+                    console.warn(`  AVR setting for "${desc}" might be incorrect. Please verify manually.`);
+                }
+            } else if (commandConfirmed) {
+                // Already confirmed (either by direct echo, or by query, or by optimistic PSSWL OFF retry)
+            } else if (!cmdQuery && !expectsDirectEchoForSet) {
+                //console.log(`  Command "${cmdSet}" sent (no echo expected, no query). Assuming success after settle time.`);
+                await new Promise(resolve => setTimeout(resolve, TELNET_CONFIG.setCommandSettleTime));
+                commandConfirmed = true; // Assume success for this type
+            }
+            if (!commandConfirmed) {
+                console.warn(`Warning: Command "${desc}" (${cmdSet}) could not be fully confirmed.`);
+            }
+        }
+        console.log('IMPORTANT: Please double-check the above settings in your AVR menu, especially if any warnings or errors were reported!');
+    } catch (error) {
+        //console.error("\n--- Telnet Operation FAILED ---");
+        console.error("Error:", error.message);
+        if (error.stack) console.error("Stack:", error.stack);
+        throw error;
+    } finally {
+        //console.log("\nCleaning up Telnet connection...");
+        if (RLine) {
+            try { RLine.close(); } catch (e) { /* ignore */ }
+            RLine = null;
+        }
+        clearTimeout(currentCommandTimeoutId);
+        commandResponseCallback = null;
+        currentWaitingCommand = null;
+        if (client && !client.destroyed) {
+            client.end(() => {
+                if (client && !client.destroyed) client.destroy();
+            });
+            await new Promise(resolve => setTimeout(resolve, 500));
+            if (client && !client.destroyed) {
+                client.destroy();
+            }
+        }
+        client = null;
+    }}
 async function selectOcaFile(searchDirectory) {
     let files;
     try {
@@ -2115,6 +2459,7 @@ function mapChannelIdForSetDat(id) {
         default: return id; 
     }}
 function prepareParamsInOrder(avrStatus, rawChSetup, filterData, sortedChannelInfo, multEqType, hasGriffinLiteDSP) {
+    const isNew = filterData.isNewModel;
     const params = [];
     const DfSettingDataParameters = [
         "AmpAssign", "AssignBin", "SpConfig", "Distance", "ChLevel", "Crossover",
@@ -2134,7 +2479,7 @@ function prepareParamsInOrder(avrStatus, rawChSetup, filterData, sortedChannelIn
         const swNum = parseInt(avrStatus.SWSetup.SWNum, 10);
         if (!isNaN(swNum) && swNum > 0) subSetup = {SWNum: swNum, SWMode: "Standard", SWLayout: "N/A"};
     }
-    if (!filterData || !filterData.channels || !Array.isArray(filterData.channels)) throw new Error("Invalid or missing 'channels' array in OCA file data!");
+    if (!filterData || !filterData.channels || !Array.isArray(filterData.channels)) throw new Error("Invalid or missing 'channels' array in '.oca' file data!");
     if (!rawChSetup || !Array.isArray(rawChSetup)) throw new Error("Missing or invalid channel status!");
     if (!sortedChannelInfo || !Array.isArray(sortedChannelInfo)) throw new Error("Missing or invalid active channels list!");
     const avrRecognizedMappedIds = new Set();
@@ -2147,7 +2492,7 @@ function prepareParamsInOrder(avrStatus, rawChSetup, filterData, sortedChannelIn
         }
     }
     for (const ocaChannel of filterData.channels) {
-        if (!ocaChannel.commandId) throw new Error("OCA Error: Channel entry in '.oca' file is missing its 'commandId'. Transfer cannot proceed.");
+        if (!ocaChannel.commandId) throw new Error("Channel entry in '.oca' file is missing its 'commandId'. Transfer cannot proceed.");
         const mappedOcaChannelId = mapChannelIdForSetDat(ocaChannel.commandId);
         if (!avrRecognizedMappedIds.has(mappedOcaChannelId)) throw new Error(`Configuration Mismatch Error: Channel ${mappedOcaChannelId} (from '.oca' file's commandId: '${ocaChannel.commandId}') is defined in the '.oca' file, but this channel ID is NOT RECOGNIZED by the AVR in its current setup!`);
     }
@@ -2169,61 +2514,41 @@ function prepareParamsInOrder(avrStatus, rawChSetup, filterData, sortedChannelIn
             throw new Error(`Could not find setup entry for active channel ${avrOriginalChannelId}!`);
         }
         const ocaChannel = filterData.channels.find(ch => mapChannelIdForSetDat(ch.commandId) === avrMappedChannelId);
-        if (!ocaChannel) throw new Error(`OCA Data Mismatch Error: Channel ${avrMappedChannelId} (from AVR's active channel ${avrOriginalChannelId}) is active on the AVR but NOT defined in the .oca file. Transfer cannot proceed.`);
+        if (!ocaChannel) throw new Error(`Data Mismatch Error: Channel ${avrMappedChannelId} (from AVR's active channel ${avrOriginalChannelId}) is active on the AVR but NOT defined in the .oca file. Transfer cannot proceed.`);
         let ocaSpeakerTypeForThisChannel = ocaChannel.speakerType;
-        if (ocaSpeakerTypeForThisChannel !== 'S' && ocaSpeakerTypeForThisChannel !== 'E') throw new Error(`OCA Error: Channel ${avrMappedChannelId} in '.oca' file has an invalid speakerType '${ocaSpeakerTypeForThisChannel}'. Must be 'S' or 'E'.`);
-        let finalTypeForSpConfig = avrReportedSpeakerType;
-        const isPotentiallySubwoofer = avrMappedChannelId.startsWith('SW') || avrMappedChannelId === 'LFE';
-        if (isPotentiallySubwoofer) {
-            if (ocaSpeakerTypeForThisChannel === 'E') {
-                if (avrReportedSpeakerType === 'N') {
-                    throw new Error(`Subwoofer ${avrMappedChannelId} is 'N' on AVR!`);
-                } else if (avrReportedSpeakerType !== 'E') {
-                    throw new Error(`Subwoofer ${avrMappedChannelId} is of unknown type on AVR!`);
-                }
-            }
-        } else {
-            if (ocaSpeakerTypeForThisChannel === 'S') {
-                if (avrReportedSpeakerType === 'L') {
-                    finalTypeForSpConfig = 'S';
-                    console.warn(`OVERRIDE: Speaker ${avrMappedChannelId} is 'L' (Large) on AVR. '.oca' file specifies 'S'. Forcing to 'small'.`);
-                } else if (avrReportedSpeakerType === 'N') {
-                    throw new Error(`Speaker ${avrMappedChannelId} is 'N' on AVR!`);
-                } 
-            }
-        }
-        finalSpConfig.push({ [avrMappedChannelId]: finalTypeForSpConfig });
+        if (ocaSpeakerTypeForThisChannel !== 'S' && ocaSpeakerTypeForThisChannel !== 'E' && ocaSpeakerTypeForThisChannel !== 'L') throw new Error(`Channel ${avrMappedChannelId} in '.oca' file has an invalid speakerType '${ocaSpeakerTypeForThisChannel}'. Must be 'S', 'E' or 'L'.`);
+        let finalTypeForSpConfig = ocaSpeakerTypeForThisChannel;
+        finalSpConfig.push({[avrMappedChannelId]: finalTypeForSpConfig});
         if (ocaChannel.distanceInMeters !== undefined && ocaChannel.distanceInMeters !== null) {
             distanceArray.push({ [avrMappedChannelId]: Math.round(ocaChannel.distanceInMeters * 100) });
         } else {
-            throw new Error(`OCA Error: Distance missing for ${avrMappedChannelId} (orig: ${avrOriginalChannelId}) in OCA file!`);
+            throw new Error(`Distance missing for ${avrMappedChannelId} (orig: ${avrOriginalChannelId}) in OCA file!`);
         }
         if (ocaChannel.trimAdjustmentInDbs !== undefined && ocaChannel.trimAdjustmentInDbs !== null) {
-            chLevelArray.push({ [avrMappedChannelId]: Math.round(ocaChannel.trimAdjustmentInDbs * 10) });
+            chLevelArray.push({[avrMappedChannelId]: Math.round(ocaChannel.trimAdjustmentInDbs * 10)});
         } else {
-            throw new Error(`OCA Error: Trim/Level missing for ${avrMappedChannelId} (orig: ${avrOriginalChannelId}) in OCA file!`);
+            throw new Error(`Trim/Level missing for ${avrMappedChannelId} (orig: ${avrOriginalChannelId}) in OCA file!`);
         }
         const isEffectivelySubwoofer = finalTypeForSpConfig === 'E';
-
-        if (isEffectivelySubwoofer) {
-            crossoverArray.push({ [avrMappedChannelId]: "F" });
+        const isNewAndLarge = isNew && finalTypeForSpConfig === 'L';
+        if (isEffectivelySubwoofer || isNewAndLarge) {
+            crossoverArray.push({[avrMappedChannelId]: "F"});
         } else {
-            if (finalTypeForSpConfig !== 'S') console.warn(`CRITICAL WARNING (Crossover): Speaker ${avrMappedChannelId} ended up with type '${finalTypeForSpConfig}' not 'S'. Crossover logic might be unreliable. OCA 'speakerType' was '${ocaSpeakerTypeForThisChannel}'.`);
             if (ocaChannel.xover !== undefined && ocaChannel.xover !== null) {
                 let xoverValueToSet;
                 if (typeof ocaChannel.xover === 'string' && ocaChannel.xover.toUpperCase() === 'F') {
-                    throw new Error(`OCA Error: Speaker ${avrMappedChannelId} (intended type 'S') in '.oca' file is specified with "F" crossover, which is invalid for a small speaker.`);
+                    console.warn(`Speaker ${avrMappedChannelId} (intended type 'S') in '.oca' file is specified with "F" crossover, which is invalid for a small speaker.`);
                 } else {
                     const numericXover = Number(ocaChannel.xover);
                     if (!isNaN(numericXover) && numericXover >= 40 && numericXover <= 250) {
                         xoverValueToSet = numericXover;
                     } else {
-                        throw new Error(`OCA Error: Invalid numeric crossover value ('${ocaChannel.xover}') for speaker ${avrMappedChannelId} in '.oca' file. Must be between 40 and 250.`);
+                        throw new Error(`Invalid numeric crossover value ('${ocaChannel.xover}') for speaker ${avrMappedChannelId} in '.oca' file. Must be between 40 and 250.`);
                     }
                 }
                 crossoverArray.push({ [avrMappedChannelId]: xoverValueToSet });
             } else {
-                throw new Error(`OCA Error: Crossover missing for speaker ${avrMappedChannelId} (intended type 'S') in '.oca' file!`);
+                throw new Error(`Crossover missing for speaker ${avrMappedChannelId} (intended type 'S') in '.oca' file!`);
             }
         }
     }
@@ -2247,9 +2572,7 @@ function prepareParamsInOrder(avrStatus, rawChSetup, filterData, sortedChannelIn
             case "AudyLfcLev": value = calibrationSettings.AudyLfcLev; break;
             case "SWSetup": value = subSetup; break;
         }
-        if (value !== undefined && value !== null) {
-            params.push({ key, value });
-        }
+        if (value !== undefined && value !== null) params.push({key, value});
     }
     return params;}
 async function sendSetDatCommand(sendFunction, avrStatus, rawChSetup, filterData, sortedChannelInfo, multEqType, hasGriffinLiteDSP) {
@@ -2511,10 +2834,10 @@ async function runCalibrationTransfer(targetIp, basePathForOcaSearch) {
             default: throw new Error(`Unknown eqType in .oca file: ${filterData.eqType}`);
         }
         try {
-            await sendTelnetCommands(targetIp, 23, filterData.lpfForLFE);
+            await sendTelnetCommands(targetIp, 23, filterData.lpfForLFE, filterData.bassMode, filterData.isNewModel, filterData.channels[0].xover);
         } catch (telnetError) { 
             console.error(`Telnet setup failed: ${telnetError.message}`); 
-            console.warn("Continuing transfer, but preset or LFE settings might be incorrect.");
+            console.warn("Continuing transfer, but preset, LFE, L+M or bass extraction frequency settings might be compromised! Please double check these settings in the AVR menu.");
         }
         await delay(1000);
         client = await _connectToAVR(targetIp, AVR_CONTROL_PORT, TRANSFER_CONFIG.timeouts.connect, 'transfer');
@@ -2565,7 +2888,7 @@ async function runCalibrationTransfer(targetIp, basePathForOcaSearch) {
                 console.warn(`- The 'ampAssignInfo' in the OCA file does not match the AVR's current 'AssignBin'.`);
                 console.warn(`OCA AssignBin: ${ocaAssignBin}`);
                 console.warn(`AVR AssignBin: ${avrAssignBin}`);
-                console.warn(`This suggests AVR amp assign settings (pre-out, Zone 2, Bi-Amp, SW bass mode, etc.) may have changed since the OCA file was created.`);
+                console.warn(`This suggests AVR 'Amp assign' settings (pre-out, Zone 2, Bi-Amp, bass mode, etc.) may have changed since the '.oca' file was created.`);
                 console.warn(`Proceeding using the AVR's 'current' configuration but resolving the problem in the receiver's set up menu and generating a new configuration file is advised.`);
                 console.warn(`Otherwise speakers may behave unexpectedly after transfer!`);
             } else {
@@ -2845,7 +3168,7 @@ async function runMeasurementProcess() {
     const subwooferCount = cachedAvrConfig.subwooferNum;
     try {
         console.log(`\nStarting measurement process for ${targetIp}...`);
-        const { totalPositions } = await inquirer.prompt([{
+        const {totalPositions} = await inquirer.prompt([{
             type: 'input',
             name: 'totalPositions',
             message: 'How many different microphone positions do you want to measure (1-25)?',
@@ -2855,7 +3178,30 @@ async function runMeasurementProcess() {
                 return (num >= 1 && num <= 25) ? true : 'Please enter a number between 1 and 25.';
             }
         }]);
-        const { confirm } = await inquirer.prompt([{type: 'confirm', name: 'confirm', message: `This will start a measurement sequence for ${totalPositions} microphone position(s). Please ENSURE the CALIBRATION MICROPHONE that came with the unit is PLUGGED IN the mic input of the AV receiver. Continue?`, default: true}]);
+        if (totalPositions > 1) console.log("Using a swivel mic stand is highly recommended for measuring multiple mic positions.");
+        let startDelayEnabled = false;
+        let startDelaySeconds = 0;
+        const { enableDelayChoice } = await inquirer.prompt([{
+            type: 'confirm',
+            name: 'enableDelayChoice',
+            message: 'Do you want to add a delay before sweeps start at each microphone position (to allow you to leave the room)?',
+            default: false
+        }]);
+        if (enableDelayChoice) {
+            startDelayEnabled = true;
+            const { delaySecondsInput } = await inquirer.prompt([{
+                type: 'input',
+                name: 'delaySecondsInput',
+                message: 'Enter delay in seconds (e.g., 5 to 30):',
+                default: 10,
+                validate: input => {
+                    const num = parseInt(input);
+                    return (num >= 1 && num <= 60) ? true : 'Please enter a number between 1 and 60 seconds.';
+                }
+            }]);
+            startDelaySeconds = parseInt(delaySecondsInput);
+        }
+        const {confirm} = await inquirer.prompt([{type: 'confirm', name: 'confirm', message: `This will start a measurement sequence for ${totalPositions} position(s). Please ENSURE the CALIBRATION MICROPHONE that came with the unit is PLUGGED IN the front panel of the AV receiver. Continue?`, default: true}]);
         if (!confirm) { console.log("Measurement process cancelled by user."); return; }
         console.log("\nConnecting to AVR for taking measurements...");
         client = await _connectToAVR(targetIp, AVR_CONTROL_PORT, MEASUREMENT_CONFIG.timeouts.connect, 'measurement');
@@ -2872,6 +3218,9 @@ async function runMeasurementProcess() {
             }
         } catch (infoError) {
             console.error(`Error getting AVR info: ${infoError.message}. Assuming 'float' data type.`);
+        }
+        if (avrDataType.startsWith('fixed') && subwooferCount > 2) {
+            throw new Error(`Your AVR model supports a maximum of 2 subwoofers. Your configuration reports ${subwooferCount} subwoofers. The measurement process cannot continue. Please correct your AVR settings and re-run the configuration step.`);
         }
         let channelsToMeasureInOrder = [...detectedChannels];
         if (avrDataType.startsWith('fixed')) {
@@ -2902,7 +3251,7 @@ async function runMeasurementProcess() {
         const isFixedA_MultiSub = avrDataType.startsWith('fixed') && subwooferCount > 1;
         if (isFixedA_MultiSub) {
             console.log("\n---!!! IMPORTANT: MANUAL SUBWOOFER CABLE SWAP REQUIRED !!!---");
-            console.log("This AVR model requires a manual cable swap to measure multiple subwoofers.");
+            console.log("This AVR model requires a manual cable swap to measure each one of the multiple subwoofers separately.");
             console.log("You will be prompted when to swap the cables during the process.");
             console.log("-----------------------------------------------------------------");
             await delay(4000);
@@ -2911,171 +3260,204 @@ async function runMeasurementProcess() {
         const enterAudyHex = '5400130000454e5445525f4155445900000077';
         await send(enterAudyHex, 'ENTER_AUDY_MEASURE', { timeout: MEASUREMENT_CONFIG.timeouts.enterCalibration, expectAck: true, addChecksum: false });
         mModeEntered = true;
-        console.log(" -> Mode entered successfully.");
         const avrInitDelay = 15000;
-        console.log(`AVR is initializing for measurement mode, please wait... (this may take up to ${avrInitDelay / 1000} seconds)`);
+        console.log(`AVR is initializing for measurement mode, please wait... (this will take ${avrInitDelay / 1000} seconds)`);
         await delay(avrInitDelay);
         console.log("AVR should now be ready.");
         const allPositionsData = {};
-        if (isFixedA_MultiSub) {
-            const subChannels = channelsToMeasureInOrder.filter(c => c.commandId.startsWith('SW'));
-            const nonSubChannels = channelsToMeasureInOrder.filter(c => !c.commandId.startsWith('SW'));
-            for (let currentPosition = 1; currentPosition <= totalPositions; currentPosition++) {
+        const allChannelReports = new Map();
+        let currentPosition = 1;
+        while (currentPosition <= totalPositions) {
+            let positionMeasurementSatisfactory = false;
+            while (!positionMeasurementSatisfactory) {
                 allPositionsData[`position${currentPosition}`] = {};
-                const reportsForPosition = new Map();
-                console.log(`\n=============== MIC POSITION ${currentPosition} / ${totalPositions} ===============`);
-                const micPrompt = currentPosition === 1
-                    ? `Please place the microphone at the MAIN LISTENING POSITION, its tip at ear level and pointing directly up! Then press Enter to begin.`
+                for (const [_channelId, positionReportsMap] of allChannelReports) {
+                    positionReportsMap.delete(currentPosition - 1); 
+                }
+                console.log(`\n=============== Starting Measurement for MIC POSITION ${currentPosition} / ${totalPositions} ===============`);
+                const micPromptMessage = currentPosition === 1
+                    ? `Please place the calibration microphone at the MAIN LISTENING POSITION, its tip AT EAR LEVEL and POINTING directly UP! Then press Enter to begin.`
                     : `Please move the microphone to the next position (${currentPosition}) and press Enter to continue.`;
-                const { ready } = await inquirer.prompt([{ type: 'confirm', name: 'ready', message: micPrompt, default: true }]);
+                const { ready } = await inquirer.prompt([{ type: 'confirm', name: 'ready', message: micPromptMessage, default: true }]);
                 if (!ready) throw new Error("User cancelled measurement process.");
-                console.log("\n--- Starting Measurement Cycle for SPEAKERS (Non-Subwoofers) ---");
-                if (nonSubChannels.length > 0) {
-                    await sendSetPositionCommand(send, currentPosition, nonSubChannels, subwooferCount);
+                if (startDelayEnabled && startDelaySeconds > 0) {
+                    console.log(`\nStarting measurement sequence in ${startDelaySeconds} seconds... Please leave the room if desired.`);
+                    for (let i = startDelaySeconds; i > 0; i--) {
+                        process.stdout.write(`  ${i}... `);
+                        await delay(1000);
+                    }
+                    console.log(" Go!");
+                }
+                if (isFixedA_MultiSub) {
+                    const subChannels = channelsToMeasureInOrder.filter(c => c.commandId.startsWith('SW'));
+                    const nonSubChannels = channelsToMeasureInOrder.filter(c => !c.commandId.startsWith('SW'));
+                    let individualSubScratchpadOffset = 0;
+                    const firstSubInList = subChannels.length > 0 ? subChannels[0] : null;
+                    let channelsForFirstMainCycle = [...nonSubChannels];
+                    if (firstSubInList) {
+                        channelsForFirstMainCycle.push(firstSubInList);
+                        console.log(`\n--- Preparing to measure SPEAKERS and Subwoofer #${1} (${firstSubInList.commandId}) for Position ${currentPosition} ---`);
+                        await inquirer.prompt([{ type: 'confirm', name: 'readySw1', message: `Please ensure the cable for ${firstSubInList.commandId} is connected to the 'SW1' sub pre-out on the rear panel.\nPress Enter to continue.`, default: true }]);
+                    } else if (nonSubChannels.length > 0) {
+                        console.log("\n--- Starting Measurement Cycle for SPEAKERS (Non-Subwoofers) ---");
+                    }
+                    if (channelsForFirstMainCycle.length > 0) {
+                        await sendSetPositionCommand(send, currentPosition, channelsForFirstMainCycle, subwooferCount);
+                        await delay(500);
+                        for (const channel of channelsForFirstMainCycle) {
+                            console.log(`\n----- Sending sweeps for: ${channel.commandId} (Pos ${currentPosition}) -----`);
+                            const measurementReport = await startChannelMeasurement(client, channel.commandId);
+                            if (!allChannelReports.has(channel.commandId)) allChannelReports.set(channel.commandId, new Map());
+                            allChannelReports.get(channel.commandId).set(currentPosition - 1, measurementReport);
+                            console.log(` -> Measurement for channel ${channel.commandId} acknowledged by AVR.`);
+                            if (channel.commandId === 'FL' && currentPosition === 1 && (!firstSubInList || channel.commandId === firstSubInList.commandId ) && measurementReport.Distance !== undefined ) {
+                                console.log(`  -> Reported distance from Front Left (FL) speaker to microphone tip: ${measurementReport.Distance} cm`);
+                            }
+                            await delay(1000);
+                        }
+                        console.log("\n--- Retrieving impulse response data for this cycle ---");
+                        for (const channel of channelsForFirstMainCycle) {
+                            console.log(`\n----- Fetching impulse response for: ${channel.commandId} (Pos ${currentPosition}) -----`);
+                            const impulseResponseBuffer = await getChannelImpulseResponse(client, channel.commandId);
+                            let impulseFloats = fixed32BufferToFloatArray(impulseResponseBuffer);
+                            const report = allChannelReports.get(channel.commandId)?.get(currentPosition - 1);
+                            const responseCoef = report?.ResponseCoef;
+                            if (typeof responseCoef === 'number' && responseCoef !== 1) {
+                                for (let i = 0; i < impulseFloats.length; i++) impulseFloats[i] *= responseCoef;
+                            }
+                            allPositionsData[`position${currentPosition}`][channel.commandId] = impulseFloats;
+                            console.log(` -> Successfully retrieved ${impulseFloats.length} samples for ${channel.commandId}.`);
+                            await delay(500);
+                        }
+                    }
+                    const otherSubChannels = subChannels.slice(1);
+                    for (const subChannel of otherSubChannels) {
+                        const channelIdToSaveAs = subChannel.commandId;
+                        const subNumber = channelIdToSaveAs.replace('SW', '');
+                        console.log(`\n----- MANUAL ACTION REQUIRED for Subwoofer ${subNumber} (${channelIdToSaveAs}) -----`);
+                        await inquirer.prompt([{ type: 'confirm', name: 'readyToSwap', message: `Please UNPLUG the current cable from the 'SW1' sub pre-out on the rear panel of the AVR and PLUG IN the cable for subwoofer #${subNumber} (${channelIdToSaveAs}).\n  Press Enter when you have swapped RCA cables.`, default: true }]);
+                        const positionToSendToAvrForSub = 20 + individualSubScratchpadOffset;
+                        individualSubScratchpadOffset++; 
+                        console.log(` -> Using temporary position ${positionToSendToAvrForSub} for ${channelIdToSaveAs}...`);
+                        const sw1ForCycleObject = { commandId: 'SW1' };
+                        const subCycleChannelsToTellAvr = [...nonSubChannels, sw1ForCycleObject];
+                        await sendSetPositionCommand(send, positionToSendToAvrForSub, subCycleChannelsToTellAvr, subwooferCount);
+                        await delay(500);
+                        console.log(` -> Sweeping all speakers for this sub-cycle (non-sub responses ignored)...`);
+                        for (const ch of nonSubChannels) {await startChannelMeasurement(client, ch.commandId);}
+                        console.log(` -> Sweeping ${channelIdToSaveAs} via SW1 input (AVR sees SW1)...`);
+                        const subMeasurementReport = await startChannelMeasurement(client, 'SW1');
+                        if (!allChannelReports.has(channelIdToSaveAs)) allChannelReports.set(channelIdToSaveAs, new Map());
+                        allChannelReports.get(channelIdToSaveAs).set(currentPosition - 1, subMeasurementReport);
+                        console.log(` -> Measurement sequence for ${channelIdToSaveAs} complete.`);
+                        await delay(1000);
+                        console.log(`\n----- Fetching impulse response for: ${channelIdToSaveAs} (AVR saw SW1) -----`);
+                        const impulseResponseBuffer = await getChannelImpulseResponse(client, 'SW1');
+                        let impulseFloats = fixed32BufferToFloatArray(impulseResponseBuffer);
+                        const subResponseCoef = subMeasurementReport?.ResponseCoef;
+                        if (typeof subResponseCoef === 'number' && subResponseCoef !== 1) {
+                            for (let i = 0; i < impulseFloats.length; i++) impulseFloats[i] *= subResponseCoef;
+                        }
+                        allPositionsData[`position${currentPosition}`][channelIdToSaveAs] = impulseFloats;
+                        console.log(` -> Successfully retrieved ${impulseFloats.length} samples for ${channelIdToSaveAs}.`);
+                        await delay(500);
+                    }
+                    if (subChannels.length > 0) {
+                        console.log(`\n----- MANUAL ACTION REQUIRED: Restore Cabling -----`);
+                        await inquirer.prompt([{type: 'confirm', name: 'ready', message: `All measurements for position ${currentPosition} are complete.\nPlease restore the original subwoofer cabling (plug the SW1 cable back into the 'SW1' sub pre-out on the rear panel).\nThis is important for the next position or for finishing. Press Enter when ready.`, default: true}]);
+                    }
+                } else {
+                    await sendSetPositionCommand(send, currentPosition, channelsToMeasureInOrder, subwooferCount);
                     await delay(500);
-                    for (const channel of nonSubChannels) {
+                    console.log("\n--- Starting Measurement Cycle ---");
+                    for (const channel of channelsToMeasureInOrder) {
                         console.log(`\n----- Sending sweeps for: ${channel.commandId} -----`);
                         const measurementReport = await startChannelMeasurement(client, channel.commandId);
-                        reportsForPosition.set(channel.commandId, measurementReport);
+                        if (!allChannelReports.has(channel.commandId)) allChannelReports.set(channel.commandId, new Map());
+                        allChannelReports.get(channel.commandId).set(currentPosition - 1, measurementReport);
                         console.log(` -> Measurement for channel ${channel.commandId} acknowledged by AVR.`);
                         if (channel.commandId === 'FL' && currentPosition === 1 && measurementReport.Distance !== undefined) {
                             console.log(`  -> Reported distance from Front Left (FL) speaker to microphone tip: ${measurementReport.Distance} cm`);
                         }
                         await delay(1000);
                     }
-                    console.log("\n--- Retrieving impulse response data for SPEAKERS ---");
-                    for (const channel of nonSubChannels) {
+                    console.log("\n--- All speakers/subs for this position are complete. Starting data retrieval ---");
+                    for (const channel of channelsToMeasureInOrder) {
                         console.log(`\n----- Fetching impulse response for: ${channel.commandId} -----`);
                         const impulseResponseBuffer = await getChannelImpulseResponse(client, channel.commandId);
-                        let impulseFloats = fixed32BufferToFloatArray(impulseResponseBuffer);
-                        const report = reportsForPosition.get(channel.commandId);
+                        const impulseFloats = avrDataType.startsWith('fixed')
+                            ? fixed32BufferToFloatArray(impulseResponseBuffer)
+                            : bufferToFloatArray(impulseResponseBuffer);
+                        const report = allChannelReports.get(channel.commandId)?.get(currentPosition - 1);
                         const responseCoef = report?.ResponseCoef;
                         if (typeof responseCoef === 'number' && responseCoef !== 1) {
-                            console.log(`  -> Applying ResponseCoef of ${responseCoef} to measurement data for ${channel.commandId}.`);
-                            for (let i = 0; i < impulseFloats.length; i++) {
-                                impulseFloats[i] *= responseCoef;
-                            }
+                            for (let i = 0; i < impulseFloats.length; i++) impulseFloats[i] *= responseCoef;
                         }
+                        if (impulseFloats.length > 0 && !impulseFloats.some(sample => sample !== 0)) console.warn(`WARNING: Received an all-zero (silent) response for ${channel.commandId}. The channel may be disconnected or muted. MEASUREMENT IS INVALID!`);
                         allPositionsData[`position${currentPosition}`][channel.commandId] = impulseFloats;
                         console.log(` -> Successfully retrieved ${impulseFloats.length} samples for ${channel.commandId}.`);
                         await delay(500);
                     }
                 }
-                console.log("\n--- Starting Measurement Cycle for SUBWOOFERS (Individually) ---");
-                for (const subChannel of subChannels) {
-                    const channelIdToSaveAs = subChannel.commandId;
-                    if (channelIdToSaveAs !== 'SW1') {
-                        const subNumber = channelIdToSaveAs.replace('SW', '');
-                        console.log(`\n----- MANUAL ACTION REQUIRED for Subwoofer ${subNumber} -----`);
-                        const { readyToSwap } = await inquirer.prompt([{
-                            type: 'confirm',
-                            name: 'readyToSwap',
-                            message: `Please UNPLUG the RCA cable from the 'SW1 PRE-OUT' jack at the back of the AVR and PLUG IN the RCA cable from subwoofer #${subNumber} (${channelIdToSaveAs}).\n  Press Enter when you have swapped the cables.`,
-                            default: true
-                        }]);
-                        if (!readyToSwap) throw new Error(`User cancelled cable swap for ${channelIdToSaveAs}.`);
-                    } else {
-                         console.log(`\n----- Preparing to measure Subwoofer #1 (SW1) -----`);
-                         await inquirer.prompt([{ type: 'confirm', name: 'ready', message: `Please ensure the RCA cable for SW1 is connected to the 'SW1 PRE-OUT' jack on the back of the AVR.\nPress Enter to continue.`, default: true }]);
-                    }
-                    const subCycleChannels = [{ commandId: 'FL' }, { commandId: 'FR' }, { commandId: 'SW1' }];
-                    console.log(` -> Resetting AVR state with a [FL, FR, SW1] measurement cycle...`);
-                    await sendSetPositionCommand(send, currentPosition, subCycleChannels, subwooferCount);
-                    await delay(500);
-                    console.log(" -> Sweeping FL/FR (responses will be ignored)...");
-                    await startChannelMeasurement(client, 'FL');
-                    await startChannelMeasurement(client, 'FR');
-                    console.log(` -> Sweeping ${channelIdToSaveAs} via SW1 input...`);
-                    const subMeasurementReport = await startChannelMeasurement(client, 'SW1');
-                    console.log(` -> Measurement sequence for ${channelIdToSaveAs} complete.`);
-                    await delay(1000);
-                    console.log(`\n----- Fetching impulse response for: ${channelIdToSaveAs} -----`);
-                    const impulseResponseBuffer = await getChannelImpulseResponse(client, 'SW1');
-                    let impulseFloats = fixed32BufferToFloatArray(impulseResponseBuffer);
-                    const subResponseCoef = subMeasurementReport?.ResponseCoef;
-                    if (typeof subResponseCoef === 'number' && subResponseCoef !== 1) {
-                        console.log(`  -> Applying ResponseCoef of ${subResponseCoef} to measurement data for ${channelIdToSaveAs}.`);
-                        for (let i = 0; i < impulseFloats.length; i++) {
-                            impulseFloats[i] *= subResponseCoef;
-                        }
-                    }
-                    allPositionsData[`position${currentPosition}`][channelIdToSaveAs] = impulseFloats;
-                    console.log(` -> Successfully retrieved ${impulseFloats.length} samples for ${channelIdToSaveAs}.`);
-                    await delay(500);
+                const { satisfactionChoice } = await inquirer.prompt([{
+                    type: 'list',
+                    name: 'satisfactionChoice',
+                    message: `Measurements for Position ${currentPosition} complete. Are you satisfied?`,
+                    choices: [
+                        { name: 'Yes, proceed to next position (or finish)', value: 'yes' },
+                        { name: 'No, repeat measurements for this position', value: 'no' },
+                        { name: 'Cancel entire measurement process', value: 'cancel' }
+                    ],
+                    loop: false
+                }]);
+                if (satisfactionChoice === 'yes') {
+                    positionMeasurementSatisfactory = true;
+                } else if (satisfactionChoice === 'no') {
+                    console.log(`\nDiscarding measurements for Position ${currentPosition} and preparing to re-measure.`);
+                } else { 
+                    throw new Error("User cancelled measurement process during review.");
                 }
-                console.log(`\n----- MANUAL ACTION REQUIRED: Restore Cabling -----`);
-                await inquirer.prompt([{type: 'confirm', name: 'ready', message: `All measurements for position ${currentPosition} are complete.\nPlease restore the original subwoofer cabling (plug the SW1 cable back into the 'SW1 PRE-OUT' jack).\nThis is important for the next position or for finishing. Press Enter when ready.`, default: true}]);
+            } 
+            if (positionMeasurementSatisfactory) {
+                 currentPosition++; 
             }
-        } else {
-            for (let currentPosition = 1; currentPosition <= totalPositions; currentPosition++) {
-                allPositionsData[`position${currentPosition}`] = {};
-                const reportsForPosition = new Map();
-                console.log(`\n=============== MIC POSITION ${currentPosition} / ${totalPositions} ===============`);
-                const micPrompt = currentPosition === 1
-                    ? `Please place the microphone at the MAIN LISTENING POSITION, its tip at ear level and pointing directly up! Then press Enter to begin.`
-                    : `Please move the microphone to the next position (${currentPosition}) and press Enter to continue.`;
-                const { ready } = await inquirer.prompt([{ type: 'confirm', name: 'ready', message: micPrompt, default: true }]);
-                if (!ready) throw new Error("User cancelled measurement process.");
-                await sendSetPositionCommand(send, currentPosition, channelsToMeasureInOrder, subwooferCount);
-                await delay(500);
-                console.log("\n--- Starting Measurement Cycle ---");
-                for (const channel of channelsToMeasureInOrder) {
-                    console.log(`\n----- Sending sweeps for: ${channel.commandId} -----`);
-                    const measurementReport = await startChannelMeasurement(client, channel.commandId);
-                    reportsForPosition.set(channel.commandId, measurementReport);
-                    console.log(` -> Measurement for channel ${channel.commandId} acknowledged by AVR.`);
-                    if (channel.commandId === 'FL' && currentPosition === 1 && measurementReport.Distance !== undefined) {
-                        console.log(`  -> Reported distance from Front Left (FL) speaker to microphone tip: ${measurementReport.Distance} cm`);
-                    }
-                    await delay(1000);
-                }
-                console.log("\n--- All speakers/subs for this position are complete. Starting data retrieval ---");
-                for (const channel of channelsToMeasureInOrder) {
-                    console.log(`\n----- Fetching impulse response for: ${channel.commandId} -----`);
-                    const impulseResponseBuffer = await getChannelImpulseResponse(client, channel.commandId);
-                    let impulseFloats = avrDataType.startsWith('fixed')
-                        ? fixed32BufferToFloatArray(impulseResponseBuffer)
-                        : bufferToFloatArray(impulseResponseBuffer);
-                    const report = reportsForPosition.get(channel.commandId);
-                    const responseCoef = report?.ResponseCoef;
-                    if (typeof responseCoef === 'number' && responseCoef !== 1) {
-                        console.log(`  -> Applying ResponseCoef of ${responseCoef} to measurement data for ${channel.commandId}.`);
-                        for (let i = 0; i < impulseFloats.length; i++) {
-                            impulseFloats[i] *= responseCoef;
-                        }
-                    }
-                    if (impulseFloats.length > 0 && !impulseFloats.some(sample => sample !== 0)) console.warn(`WARNING: Received an all-zero (silent) response for ${channel.commandId}. Check if the microphone or the speaker is connected! MEASUREMENT IS INVALID!`);
-                    allPositionsData[`position${currentPosition}`][channel.commandId] = impulseFloats;
-                    console.log(` -> Successfully retrieved ${impulseFloats.length} samples for ${channel.commandId}.`);
-                    await delay(500);
-                }
-            }
-        }
+        } 
         if (Object.keys(allPositionsData).length > 0) {
             const restructuredData = {detectedChannels: []};
-            for (const channel of detectedChannels) {
+            for (const channel of detectedChannels) { 
                 const channelId = channel.commandId;
                 const channelData = {commandId: channelId};
                 channelData.responseData = {};
                 for (let pos = 1; pos <= totalPositions; pos++) {
                     const originalKey = `position${pos}`;
-                    const newKey = (pos - 1).toString();
-                    if (allPositionsData[originalKey] && allPositionsData[originalKey][channelId]) {
+                    const newKey = (pos - 1).toString(); 
+                    if (allPositionsData[originalKey] && typeof allPositionsData[originalKey][channelId] !== 'undefined') {
                         const floatArray = allPositionsData[originalKey][channelId];
                         channelData.responseData[newKey] = floatArray;
+                    } else if (allPositionsData[originalKey]) { 
+                        channelData.responseData[newKey] = [];
+                        console.warn(`[ADY Save] No measurement data found for ${channelId} at logical position ${pos}. Saving empty array.`);
                     }
                 }
-                restructuredData.detectedChannels.push(channelData);
+                if (Object.keys(channelData.responseData).length > 0 || totalPositions === 0) {
+                    restructuredData.detectedChannels.push(channelData);
+                } else {
+                    console.warn(`[ADY Save] Channel ${channelId} had no data for any completed positions. Not saving to file.`);
+                }
             }
-            const now = new Date();
-            const timestamp = now.toISOString().replace(/[-:]/g, '').replace(/\..+/, '').replace('T', '_');
-            const adyFilename = `Acoustica_measurement_${totalPositions}_mic_positions_${timestamp}.ady`;
-            const adyFilepath = path.join(APP_BASE_PATH, adyFilename);
-            console.log(`\nSaving all measurements to ${adyFilename}...`);
-            const adyJsonString = JSON.stringify(restructuredData, null, 2);
-            await fsPromises.writeFile(adyFilepath, adyJsonString, 'utf8');
-            console.log(`Success! File saved to: ${adyFilepath}`);
-            console.log(`You can upload and save these measurements to REW using 'Extract measurements' button in the optimizer.`)
+            if(restructuredData.detectedChannels.length > 0) {
+                const now = new Date();
+                const timestamp = now.toISOString().replace(/[-:]/g, '').replace(/\..+/, '').replace('T', '_');
+                const adyFilename = `Acoustica_measurement_${Object.keys(allPositionsData).length}_mic_positions_${timestamp}.ady`;
+                const adyFilepath = path.join(APP_BASE_PATH, adyFilename);
+                console.log(`\nSaving all measurements to ${adyFilename}...`);
+                const adyJsonString = JSON.stringify(restructuredData, null, 2);
+                await fsPromises.writeFile(adyFilepath, adyJsonString, 'utf8');
+                console.log(`Success! File saved to: ${adyFilepath}`);
+                console.log(`You can upload and use these measurements in REW using 'Extract measurements' button within the optimizer (menu option 3).`)
+            } else {
+                 console.warn("\nNo valid measurement data was collected for any channel. No file was saved!");
+            }
         } else {
             console.warn("\nNo measurement data was retrieved and no file was saved!");
         }
@@ -3088,7 +3470,7 @@ async function runMeasurementProcess() {
             console.log("\nExiting measurement mode...");
             try {
                 const send = createCommandSender(client);
-                const exitAudmdHex = '5400130000455849545f4155444d440000006b';
+                const exitAudmdHex = '5400130000454e5445525f4155444d440000006b';
                 await send(exitAudmdHex, 'EXIT_AUDMD_MEASURE', { expectAck: true, addChecksum: false, timeout: 3000 });
                 console.log(" -> Mode exited successfully.");
             } catch (exitErr) {

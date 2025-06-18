@@ -3469,6 +3469,7 @@ async function generateOCA() {
     const hours = String(now.getHours()).padStart(2, '0');
     const minutes = String(now.getMinutes()).padStart(2, '0');
     const timestamp = `${month}${day}_${hours}${minutes}`;
+    const bassModer = forceLarge ? "L+M" : "LFE";;
     let baseOca = {};
     baseOca.A1EvoAcoustica = evoVersion;
     baseOca.model = jsonContent.targetModelName;
@@ -3505,10 +3506,10 @@ async function generateOCA() {
     });
     baseOca.numberOfSubwoofers = nSubs;
     baseOca.lpfForLFE = lpf4LFE;
-    baseOca.bassMode = forceLarge ? "L+M" : "LFE";
+    baseOca.bassMode = bassModer
     let ocafileName;
-    !subRolloffEnabled ? ocafileName = `${timestamp}_${tcName}_swFill${bassFill}_eqBoost${subBoost}_lowVolOffset${dbValues[levelLowVol]}_bassMode${bassMode}_A1EvoAcoustica_${evoVersion}.oca` :
-    ocafileName = `${timestamp}_${tcName}_swFill${bassFill}_eqBoost${subBoost}_swRoll${subRolloffFreq}_${subRolloffSlope}_lowVolOffset${dbValues[levelLowVol]}_bassMode${bassMode}_A1EvoAcoustica_${evoVersion}.oca`;
+    !subRolloffEnabled ? ocafileName = `${timestamp}_${tcName}_swFill${bassFill}_eqBoost${subBoost}_lowVolOffset${dbValues[levelLowVol]}_bassMode${bassModer}_A1EvoAcoustica_${evoVersion}.oca` :
+    ocafileName = `${timestamp}_${tcName}_swFill${bassFill}_eqBoost${subBoost}_swRoll${subRolloffFreq}_${subRolloffSlope}_lowVolOffset${dbValues[levelLowVol]}_bassMode${bassModer}_A1EvoAcoustica_${evoVersion}.oca`;
     ocafileName = ocafileName
       .replace(/\s+/g, '_')
       .replace(/[^\w.-]/g, '_')

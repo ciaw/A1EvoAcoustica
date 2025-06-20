@@ -2338,12 +2338,12 @@ const createCommandSender = (socket) => {
                 socket.off('error', errorHandler);
                 socket.off('close', closeHandler);
                 if (isNackOrError) {
-                    console.log(`✗ Failed: ${label} - ${reason}`);
+                    console.log(`!!! Failed: ${label} - ${reason}`);
                     reject(new Error(`${label}: ${reason}`));
                 } else if (success) {
                     resolve(true);
                 } else {
-                    console.error(`✗ Timeout/Error: ${label} - ${reason}`);
+                    console.error(`!!! Timeout/Error: ${label} - ${reason}`);
                     reject(new Error(`${label}: ${reason}`));
                 }
             };
@@ -2821,7 +2821,7 @@ async function runCalibrationTransfer(targetIp, basePathForOcaSearch) {
         try {
             const fileContent = fs.readFileSync(selectedOcaFile, 'utf8');
             filterData = JSON.parse(fileContent);
-            if (typeof filterData.eqType === 'undefined' || !filterData.channels?.length || filterData.lpfForLFE === undefined) throw new Error("Invalid OCA file format. Missing required fields (eqType, channels, lpfForLFE).");
+            if (typeof filterData.eqType === 'undefined' || !filterData.channels?.length || filterData.lpfForLFE === undefined || filterData.bassMode === undefined) throw new Error("Invalid OCA file format. Missing required fields (eqType, channels, lpfForLFE, bassMode).");
             console.log(`Successfully read and parsed ${path.basename(selectedOcaFile)}.`);
         } catch (err) {
             throw new Error(`Error reading or parsing OCA file ${selectedOcaFile}: ${err.message}`);
@@ -3258,7 +3258,7 @@ async function runMeasurementProcess() {
         }
         console.log("Entering measurement mode...");
         const enterAudyHex = '5400130000454e5445525f4155445900000077';
-        await send(enterAudyHex, 'ENTER_AUDY_MEASURE', { timeout: MEASUREMENT_CONFIG.timeouts.enterCalibration, expectAck: true, addChecksum: false });
+        await send(enterAudyHex, 'ENTER_AUDY', { timeout: MEASUREMENT_CONFIG.timeouts.enterCalibration, expectAck: true, addChecksum: false });
         mModeEntered = true;
         const avrInitDelay = 15000;
         console.log(`AVR is initializing for measurement mode, please wait... (this will take ${avrInitDelay / 1000} seconds)`);
@@ -3310,8 +3310,8 @@ async function runMeasurementProcess() {
                             if (!allChannelReports.has(channel.commandId)) allChannelReports.set(channel.commandId, new Map());
                             allChannelReports.get(channel.commandId).set(currentPosition - 1, measurementReport);
                             console.log(` -> Measurement for channel ${channel.commandId} acknowledged by AVR.`);
-                            if (channel.commandId === 'FL' && currentPosition === 1 && (!firstSubInList || channel.commandId === firstSubInList.commandId ) && measurementReport.Distance !== undefined ) {
-                                console.log(`  -> Reported distance from Front Left (FL) speaker to microphone tip: ${measurementReport.Distance} cm`);
+                            if ((channel.commandId === 'FL' || channel.commandId === 'FR') && currentPosition === 1 && (!firstSubInList || channel.commandId === firstSubInList.commandId ) && measurementReport.Distance !== undefined ) {
+                                console.log(`  -> Reported distance from ${channel.commandId} speaker to microphone tip: ${measurementReport.Distance} cm`);
                             }
                             await delay(1000);
                         }
@@ -3470,8 +3470,8 @@ async function runMeasurementProcess() {
             console.log("\nExiting measurement mode...");
             try {
                 const send = createCommandSender(client);
-                const exitAudmdHex = '5400130000454e5445525f4155444d440000006b';
-                await send(exitAudmdHex, 'EXIT_AUDMD_MEASURE', { expectAck: true, addChecksum: false, timeout: 3000 });
+                const exitAudmdHex = '5400130000455849545f4155444d440000006b';
+                await send(exitAudmdHex, 'EXIT_AUDMD', {expectAck: true, addChecksum: false, timeout: 3000});
                 console.log(" -> Mode exited successfully.");
             } catch (exitErr) {
                 console.error(`!!! FAILED to exit calibration mode during cleanup: ${exitErr.message}`);

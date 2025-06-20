@@ -2315,7 +2315,7 @@ async function sortBass() {
             }
         }
     }
-    determinedHpCandidateMaxFreq = Math.max(HP_CANDIDATE_MIN_FREQ, determinedHpCandidateMaxFreq);
+    determinedHpCandidateMaxFreq = Math.max(12, Math.ceil(determinedHpCandidateMaxFreq * 1.5));
     if (determinedHpCandidateMaxFreq < HP_CANDIDATE_MAX_FREQ_ORIGINAL) {
         console.info(`Final adjusted HPF candidate search range for workers: ${HP_CANDIDATE_MIN_FREQ} Hz to ${determinedHpCandidateMaxFreq.toFixed(1)} Hz.`);
     } else {

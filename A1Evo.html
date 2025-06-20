@@ -2293,6 +2293,48 @@ async function sortBass() {
           fixedAnalysisTargetMagnitude[i] = NaN;
       }
     }
+    const HP_CANDIDATE_MIN_FREQ = 11;
+    const HP_CANDIDATE_MAX_FREQ_ORIGINAL = 56;
+    let determinedHpCandidateMaxFreq = HP_CANDIDATE_MAX_FREQ_ORIGINAL;
+    console.info(`Original HPF candidate search range for workers: ${HP_CANDIDATE_MIN_FREQ} Hz to ${HP_CANDIDATE_MAX_FREQ_ORIGINAL} Hz.`);
+    for (let i = 0; i < fixedAnalysisFrequencies.length; i++) {
+        const freq = fixedAnalysisFrequencies[i];
+        const subMag = fixedAnalysisSubMagnitude[i];
+        const targetMag = fixedAnalysisTargetMagnitude[i];
+        if (freq < HP_CANDIDATE_MIN_FREQ) {
+            continue;
+        }
+        if (freq > HP_CANDIDATE_MAX_FREQ_ORIGINAL) {
+            break;
+        }
+        if (isFinite(subMag) && isFinite(targetMag)) {
+            if (subMag > targetMag) {
+                determinedHpCandidateMaxFreq = freq;
+                console.info(`Subwoofer response found to exceed target at ${freq.toFixed(1)} Hz. Adjusting max HPF candidate frequency to this value.`);
+                break; 
+            }
+        }
+    }
+    determinedHpCandidateMaxFreq = Math.max(HP_CANDIDATE_MIN_FREQ, determinedHpCandidateMaxFreq);
+    if (determinedHpCandidateMaxFreq < HP_CANDIDATE_MAX_FREQ_ORIGINAL) {
+        console.info(`Final adjusted HPF candidate search range for workers: ${HP_CANDIDATE_MIN_FREQ} Hz to ${determinedHpCandidateMaxFreq.toFixed(1)} Hz.`);
+    } else {
+        console.info(`HPF candidate search range for workers remains: ${HP_CANDIDATE_MIN_FREQ} Hz to ${HP_CANDIDATE_MAX_FREQ_ORIGINAL} Hz (no crossover found within range or crossover was at/above original max).`);
+    }
+    for (let i = 0; i < fixedOverallAnalysisTotalPoints; i++) {
+      const freq = fixedOverallAnalysisStartFreq * Math.pow(2, i / commonPpo);
+      fixedAnalysisFrequencies[i] = freq;
+      if (freq >= subRawStartFreq && freq <= subEndFreq) {
+          fixedAnalysisSubMagnitude[i] = subMagnitudeDecoded[freqToIndex(freq, subRawStartFreq, commonPpo, subMagnitudeDecoded.length)];
+      } else {
+          fixedAnalysisSubMagnitude[i] = NaN;
+      }
+      if (freq >= targetRawStartFreq && freq <= targetEndFreq) {
+          fixedAnalysisTargetMagnitude[i] = targetMagnitudeDecoded[freqToIndex(freq, targetRawStartFreq, commonPpo, targetMagnitudeDecoded.length)];
+      } else {
+          fixedAnalysisTargetMagnitude[i] = NaN;
+      }
+    }
     console.info("Starting analysing subwoofer internals using parallel processing - speed will vary by CPU core count...");
     const optimalResult = await new Promise((resolve, reject) => {
       const workers = [];
@@ -2382,16 +2424,19 @@ async function sortBass() {
         const workerFrequencies = new Float32Array(fixedAnalysisFrequencies);
         const workerSubMagnitude = new Float32Array(fixedAnalysisSubMagnitude);
         const workerTargetMagnitude = new Float32Array(fixedAnalysisTargetMagnitude);
-        worker.postMessage({
-          type: 'init',
-          fixedAnalysisFrequencies: workerFrequencies.buffer,
-          fixedAnalysisSubMagnitude: workerSubMagnitude.buffer,
-          fixedAnalysisTargetMagnitude: workerTargetMagnitude.buffer,
-          commonPpo: commonPpo,
-          fixedOverallAnalysisStartFreq: fixedOverallAnalysisStartFreq,
-          lpCutoffCandidates: lpCutoffCandidates_main_thread,
-          hpSearchStep: hpSearchStep
-        }, [workerFrequencies.buffer, workerSubMagnitude.buffer, workerTargetMagnitude.buffer]);
+       worker.postMessage({
+         type: 'init',
+         fixedAnalysisFrequencies: workerFrequencies.buffer,
+         fixedAnalysisSubMagnitude: workerSubMagnitude.buffer,
+         fixedAnalysisTargetMagnitude: workerTargetMagnitude.buffer,
+         commonPpo: commonPpo,
+         fixedOverallAnalysisStartFreq: fixedOverallAnalysisStartFreq,
+         lpCutoffCandidates: lpCutoffCandidates_main_thread,
+         hpSearchStep: hpSearchStep,
+         // ADD THESE TWO LINES:
+         hpCandidateMinFreq: HP_CANDIDATE_MIN_FREQ,          
+         hpCandidateMaxFreq: determinedHpCandidateMaxFreq    
+       }, [workerFrequencies.buffer, workerSubMagnitude.buffer, workerTargetMagnitude.buffer]);
         sendNextBatchToWorker(i);
       }
     });

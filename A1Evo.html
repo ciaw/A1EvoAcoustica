@@ -3553,8 +3553,8 @@ async function generateOCA() {
     baseOca.lpfForLFE = lpf4LFE;
     baseOca.bassMode = bassModer
     let ocafileName;
-    !subRolloffEnabled ? ocafileName = `${timestamp}_${tcName}_swFill${bassFill}_eqBoost${subBoost}_lowVolOffset${dbValues[levelLowVol]}_bassMode${bassModer}_ap${noAllpass}_cb${addCenter}_Acoustica_${evoVersion}.oca` :
-    ocafileName = `${timestamp}_${tcName}_swFill${bassFill}_eqBoost${subBoost}_swRoll${subRolloffFreq}_${subRolloffSlope}_lowVolOffset${dbValues[levelLowVol]}_bassMode${bassModer}_ap${noAllpass}_cb${addCenter}_Acoustica_${evoVersion}.oca`;
+    !subRolloffEnabled ? ocafileName = `${timestamp}_${tcName}_swFill${bassFill}_eqBoost${subBoost}_lowVolOffset${dbValues[levelLowVol]}_bassMode${bassModer}_AP${noAllpass}_CB${addCenter}_Acoustica_v${evoVersion}.oca` :
+    ocafileName = `${timestamp}_${tcName}_swFill${bassFill}_eqBoost${subBoost}_swRoll${subRolloffFreq}_${subRolloffSlope}_lowVolOffset${dbValues[levelLowVol]}_bassMode${bassModer}_AP${noAllpass}_CB${addCenter}_Acoustica_v${evoVersion}.oca`;
     ocafileName = ocafileName
       .replace(/\s+/g, '_')
       .replace(/[^\w.-]/g, '_')

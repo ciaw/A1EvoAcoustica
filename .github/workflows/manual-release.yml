@@ -407,13 +407,13 @@ jobs:
           for file in a1-evo-acoustica-*; do
             if [ -f "$file" ]; then
               echo "📦 Packaging: $file"
-              sha256sum "$file" > "${file}.sha256"
               mv "$file" "dist/"
-              mv "${file}.sha256" "dist/"
             else
               echo "⚠️ Expected executable not found: $file"
             fi
-          done        echo "✅ Build completed"
+          done
+
+          echo "✅ Build completed"
           ls -la dist/
 
       - name: Create tag and commit

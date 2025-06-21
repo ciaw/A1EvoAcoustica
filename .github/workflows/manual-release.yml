@@ -204,13 +204,20 @@ jobs:
       if: github.event.inputs.dry_run != 'true'
       run: |
         NEW_VERSION="${{ needs.validate-inputs.outputs.normalized_version }}"
-
+        
         echo "🔄 Updating version to $NEW_VERSION in all files..."
 
-        # Update package.json
-        npm version $NEW_VERSION --no-git-tag-version
+        # Convert version to full semver for npm (X.Y -> X.Y.0)
+        if [[ "$NEW_VERSION" =~ ^([0-9]+)\.([0-9]+)$ ]]; then
+          NPM_VERSION="$NEW_VERSION.0"
+        else
+          NPM_VERSION="$NEW_VERSION"
+        fi
+        
+        echo "📦 Updating package.json to version $NPM_VERSION"
+        npm version $NPM_VERSION --no-git-tag-version
 
-        # Update main.js
+        # Update main.js with the display version (keeping X.Y format)
         if [ -f "main.js" ]; then
           sed -i "s/const version = ['\''\"]*[^'\''\"]*['\''\"]/const version = '$NEW_VERSION'/g" main.js
           sed -i "s/var version = ['\''\"]*[^'\''\"]*['\''\"]/var version = '$NEW_VERSION'/g" main.js
@@ -223,7 +230,7 @@ jobs:
           echo "✅ Updated main.js"
         fi
 
-        # Update A1Evo.html
+        # Update A1Evo.html with the display version (keeping X.Y format)
         if [ -f "A1Evo.html" ]; then
           sed -i "s/evoVersion = ['\''\"]*[^'\''\"]*['\''\"]/evoVersion = '$NEW_VERSION'/g" A1Evo.html
           sed -i "s/const evoVersion = ['\''\"]*[^'\''\"]*['\''\"]/const evoVersion = '$NEW_VERSION'/g" A1Evo.html
@@ -330,7 +337,7 @@ jobs:
         npm ci
 
         echo "🔨 Building v${{ needs.validate-inputs.outputs.normalized_version }} executables..."
-
+        
         # Determine build command based on platform selection
         PLATFORMS="${{ github.event.inputs.build_platforms }}"
 
@@ -363,7 +370,7 @@ jobs:
       if: github.event.inputs.dry_run != 'true'
       run: |
         NEW_VERSION="${{ needs.validate-inputs.outputs.normalized_version }}"
-        TARGET_COMMIT="${{ needs.validate-inputs.outputs.target_commit }}"
+        TARGET_COMMIT="${{ needs.validate_inputs.outputs.target_commit }}"
 
         if [ -n "${{ github.event.inputs.commit_hash }}" ]; then
           # For specific commits, just create tag without committing changes
@@ -392,15 +399,15 @@ jobs:
       if: github.event.inputs.dry_run != 'true'
       uses: softprops/action-gh-release@v1
       with:
-        tag_name: v${{ needs.validate-inputs.outputs.normalized_version }}
-        name: 🎯 A1 Evo Acoustica v${{ needs.validate-inputs.outputs.normalized_version }} (${{ github.event.inputs.release_type }})
+        tag_name: v${{ needs.validate_inputs.outputs.normalized_version }}
+        name: 🎯 A1 Evo Acoustica v${{ needs.validate_inputs.outputs.normalized_version }} (${{ github.event.inputs.release_type }})
         body_path: release_notes.md
         files: |
           dist/*
         prerelease: ${{ github.event.inputs.prerelease }}
         draft: false
         make_latest: ${{ github.event.inputs.make_latest }}
-        target_commitish: ${{ needs.validate-inputs.outputs.target_commit }}
+        target_commitish: ${{ needs.validate_inputs.outputs.target_commit }}
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

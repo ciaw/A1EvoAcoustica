@@ -271,9 +271,7 @@ jobs:
         RELEASE_TYPE="${{ github.event.inputs.release_type }}"
         CUSTOM_NOTES="${{ github.event.inputs.release_notes }}"
         TARGET_COMMIT="${{ needs.validate-inputs.outputs.target_commit }}"
-        CURRENT_VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
-
-        # Release type emojis
+        CURRENT_VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")        # Release type emojis
         case "$RELEASE_TYPE" in
           "major") TYPE_EMOJI="🚀" ;;
           "minor") TYPE_EMOJI="✨" ;;
@@ -281,7 +279,9 @@ jobs:
           "hotfix") TYPE_EMOJI="🔥" ;;
           "prerelease") TYPE_EMOJI="🧪" ;;
           *) TYPE_EMOJI="📦" ;;
-        esac        {
+        esac
+
+        {
           echo "## $TYPE_EMOJI A1 Evo Acoustica v$NEW_VERSION"
           echo ""
 

@@ -1,0 +1,449 @@
+name: Manual Release with Custom Version
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g., 8.0, 8.1.5, 9.0.0)'
+        required: true
+        type: string
+      release_type:
+        description: 'Type of release'
+        required: true
+        default: 'minor'
+        type: choice
+        options:
+          - major
+          - minor
+          - patch
+          - hotfix
+          - prerelease
+      release_notes:
+        description: 'Custom release notes (markdown supported)'
+        required: false
+        type: string
+        default: ''
+      make_latest:
+        description: 'Mark as latest release'
+        required: true
+        default: true
+        type: boolean
+      build_platforms:
+        description: 'Platforms to build'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - linux-only
+          - macos-only
+          - windows-only
+          - linux-windows
+          - macos-windows
+      prerelease:
+        description: 'Mark as pre-release'
+        required: true
+        default: false
+        type: boolean
+      dry_run:
+        description: 'Dry run (validate without releasing)'
+        required: true
+        default: false
+        type: boolean
+      commit_hash:
+        description: 'Specific commit hash (optional - leave empty for latest)'
+        required: false
+        type: string
+        default: ''
+
+jobs:
+  validate-inputs:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.validate.outputs.version }}
+      is_valid: ${{ steps.validate.outputs.is_valid }}
+      normalized_version: ${{ steps.validate.outputs.normalized_version }}
+      target_commit: ${{ steps.validate.outputs.target_commit }}
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        ref: ${{ github.event.inputs.commit_hash || 'main' }}
+
+    - name: Validate inputs and determine target commit
+      id: validate
+      run: |
+        VERSION="${{ github.event.inputs.version }}"
+        COMMIT_HASH="${{ github.event.inputs.commit_hash }}"
+
+        # Determine target commit
+        if [ -n "$COMMIT_HASH" ]; then
+          # Validate commit hash exists
+          if ! git cat-file -e "$COMMIT_HASH^{commit}" 2>/dev/null; then
+            echo "❌ Invalid commit hash: $COMMIT_HASH"
+            echo "   Commit does not exist in repository"
+            exit 1
+          fi
+          TARGET_COMMIT="$COMMIT_HASH"
+          CURRENT_VERSION=$(git show $COMMIT_HASH:package.json | node -p "JSON.parse(require('fs').readFileSync('/dev/stdin', 'utf8')).version")
+          echo "🎯 Target commit: $TARGET_COMMIT"
+          echo "📋 Version at commit: $CURRENT_VERSION"
+        else
+          TARGET_COMMIT=$(git rev-parse HEAD)
+          CURRENT_VERSION=$(node -p "require('./package.json').version")
+          echo "🎯 Target commit: $TARGET_COMMIT (latest)"
+          echo "📋 Current version: $CURRENT_VERSION"
+        fi
+
+        echo "🔍 Validating version: $VERSION"
+
+        # Check if changes are detected since last release (only relevant for latest commit)
+        CHANGES_DETECTED="false"
+        if [ -z "$COMMIT_HASH" ]; then
+          if ! git diff --quiet HEAD~1 HEAD 2>/dev/null || [ "$(git rev-list --count HEAD ^$(git describe --tags --abbrev=0 2>/dev/null || echo "HEAD~1"))" -gt 0 ]; then
+            CHANGES_DETECTED="true"
+            echo "📝 Changes detected since last release"
+          fi
+        else
+          echo "📝 Releasing specific commit - skipping change detection"
+        fi
+
+        # Normalize version with smart auto-increment for detected changes
+        if [[ "$VERSION" =~ ^([0-9]+)$ ]]; then
+          if [[ "$CHANGES_DETECTED" == "true" && "$CURRENT_VERSION" =~ ^$VERSION\.([0-9]+)$ ]]; then
+            NORMALIZED_VERSION="$VERSION.${BASH_REMATCH[1]}.1"
+            echo "🔄 Auto-increment detected: $VERSION -> $NORMALIZED_VERSION (changes found)"
+          else
+            NORMALIZED_VERSION="$VERSION.0"
+          fi
+        elif [[ "$VERSION" =~ ^([0-9]+)\.([0-9]+)$ ]]; then
+          if [[ "$CHANGES_DETECTED" == "true" && "$CURRENT_VERSION" == "$VERSION" ]]; then
+            NORMALIZED_VERSION="$VERSION.1"
+            echo "🔄 Auto-increment detected: $VERSION -> $NORMALIZED_VERSION (changes found)"
+          else
+            NORMALIZED_VERSION="$VERSION"
+          fi
+        elif [[ "$VERSION" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+          NORMALIZED_VERSION="$VERSION"
+        else
+          echo "❌ Invalid version format: $VERSION"
+          echo "   Expected: X, X.Y, or X.Y.Z"
+          exit 1
+        fi
+
+        # Check if version already exists
+        if git tag | grep -q "^v$NORMALIZED_VERSION$"; then
+          echo "❌ Version v$NORMALIZED_VERSION already exists"
+          exit 1
+        fi
+
+        # Validate version is higher than current (skip for specific commits)
+        if [ -z "$COMMIT_HASH" ]; then
+          if [[ "$(printf '%s\n' "$CURRENT_VERSION" "$NORMALIZED_VERSION" | sort -V | head -n1)" == "$NORMALIZED_VERSION" ]]; then
+            echo "⚠️  Warning: New version ($NORMALIZED_VERSION) is not higher than current ($CURRENT_VERSION)"
+            echo "   This is allowed for manual releases but unusual"
+          fi
+        fi
+
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
+        echo "normalized_version=$NORMALIZED_VERSION" >> $GITHUB_OUTPUT
+        echo "target_commit=$TARGET_COMMIT" >> $GITHUB_OUTPUT
+        echo "is_valid=true" >> $GITHUB_OUTPUT
+        echo "✅ Version validation passed: $NORMALIZED_VERSION"
+
+  manual-release:
+    needs: validate-inputs
+    runs-on: ubuntu-latest
+    if: needs.validate-inputs.outputs.is_valid == 'true'
+
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        token: ${{ secrets.GITHUB_TOKEN }}
+        ref: ${{ needs.validate-inputs.outputs.target_commit }}
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+
+    - name: Configure Git
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action Manual Release"
+
+    - name: Display release plan
+      run: |
+        echo "🎯 Manual Release Plan"
+        echo "===================="
+        echo "📦 Version: ${{ needs.validate-inputs.outputs.normalized_version }}"
+        echo "🎯 Target Commit: ${{ needs.validate-inputs.outputs.target_commit }}"
+        echo "🏷️  Type: ${{ github.event.inputs.release_type }}"
+        echo "🌟 Latest: ${{ github.event.inputs.make_latest }}"
+        echo "🚧 Pre-release: ${{ github.event.inputs.prerelease }}"
+        echo "🖥️  Platforms: ${{ github.event.inputs.build_platforms }}"
+        echo "🧪 Dry run: ${{ github.event.inputs.dry_run }}"
+        echo "👤 Triggered by: ${{ github.actor }}"
+        if [ -n "${{ github.event.inputs.commit_hash }}" ]; then
+          echo "🔗 Custom commit: ${{ github.event.inputs.commit_hash }}"
+          echo "📅 Commit date: $(git show -s --format=%ci ${{ needs.validate-inputs.outputs.target_commit }})"
+          echo "✍️  Commit message: $(git show -s --format=%s ${{ needs.validate-inputs.outputs.target_commit }})"
+        fi
+        echo ""
+
+    - name: Update versions everywhere
+      if: github.event.inputs.dry_run != 'true'
+      run: |
+        NEW_VERSION="${{ needs.validate-inputs.outputs.normalized_version }}"
+
+        echo "🔄 Updating version to $NEW_VERSION in all files..."
+
+        # Update package.json
+        npm version $NEW_VERSION --no-git-tag-version
+
+        # Update main.js
+        if [ -f "main.js" ]; then
+          sed -i "s/const version = ['\''\"]*[^'\''\"]*['\''\"]/const version = '$NEW_VERSION'/g" main.js
+          sed -i "s/var version = ['\''\"]*[^'\''\"]*['\''\"]/var version = '$NEW_VERSION'/g" main.js
+          sed -i "s/let version = ['\''\"]*[^'\''\"]*['\''\"]/let version = '$NEW_VERSION'/g" main.js
+          sed -i "s/version = ['\''\"]*[^'\''\"]*['\''\"]/version = '$NEW_VERSION'/g" main.js
+          sed -i "s/const evoVersion = ['\''\"]*[^'\''\"]*['\''\"]/const evoVersion = '$NEW_VERSION'/g" main.js
+          sed -i "s/var evoVersion = ['\''\"]*[^'\''\"]*['\''\"]/var evoVersion = '$NEW_VERSION'/g" main.js
+          sed -i "s/let evoVersion = ['\''\"]*[^'\''\"]*['\''\"]/let evoVersion = '$NEW_VERSION'/g" main.js
+          sed -i "s/evoVersion = ['\''\"]*[^'\''\"]*['\''\"]/evoVersion = '$NEW_VERSION'/g" main.js
+          echo "✅ Updated main.js"
+        fi
+
+        # Update A1Evo.html
+        if [ -f "A1Evo.html" ]; then
+          sed -i "s/evoVersion = ['\''\"]*[^'\''\"]*['\''\"]/evoVersion = '$NEW_VERSION'/g" A1Evo.html
+          sed -i "s/const evoVersion = ['\''\"]*[^'\''\"]*['\''\"]/const evoVersion = '$NEW_VERSION'/g" A1Evo.html
+          sed -i "s/var evoVersion = ['\''\"]*[^'\''\"]*['\''\"]/var evoVersion = '$NEW_VERSION'/g" A1Evo.html
+          echo "✅ Updated A1Evo.html"
+        fi
+
+        # Update webWorker.js if it exists
+        if [ -f "webWorker.js" ]; then
+          sed -i "s/version = ['\''\"]*[^'\''\"]*['\''\"]/version = '$NEW_VERSION'/g" webWorker.js
+          echo "✅ Updated webWorker.js"
+        fi
+
+    - name: Generate release notes
+      run: |
+        NEW_VERSION="${{ needs.validate-inputs.outputs.normalized_version }}"
+        RELEASE_TYPE="${{ github.event.inputs.release_type }}"
+        CUSTOM_NOTES="${{ github.event.inputs.release_notes }}"
+        TARGET_COMMIT="${{ needs.validate-inputs.outputs.target_commit }}"
+        CURRENT_VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+
+        # Release type emojis
+        case "$RELEASE_TYPE" in
+          "major") TYPE_EMOJI="🚀" ;;
+          "minor") TYPE_EMOJI="✨" ;;
+          "patch") TYPE_EMOJI="🐛" ;;
+          "hotfix") TYPE_EMOJI="🔥" ;;
+          "prerelease") TYPE_EMOJI="🧪" ;;
+          *) TYPE_EMOJI="📦" ;;
+        esac
+
+        {
+          echo "## $TYPE_EMOJI A1 Evo Acoustica v$NEW_VERSION"
+          echo ""
+
+          if [ -n "${{ github.event.inputs.commit_hash }}" ]; then
+            echo "### 🎯 Release from Specific Commit"
+            echo "**Commit Hash**: \`$TARGET_COMMIT\`"
+            echo "**Commit Date**: $(git show -s --format=%ci $TARGET_COMMIT)"
+            echo "**Commit Message**: $(git show -s --format=%s $TARGET_COMMIT)"
+            echo ""
+          fi
+
+          if [ -n "$CUSTOM_NOTES" ]; then
+            echo "### 📝 Release Notes"
+            echo "$CUSTOM_NOTES"
+            echo ""
+          fi
+
+          echo "### 🔄 Changes Since $CURRENT_VERSION"
+          if [ -n "${{ github.event.inputs.commit_hash }}" ]; then
+            echo "Changes up to commit $TARGET_COMMIT:"
+            git log $CURRENT_VERSION..$TARGET_COMMIT --pretty=format:"- %s" --no-merges | head -10
+          else
+            git log $CURRENT_VERSION..HEAD --pretty=format:"- %s" --no-merges | head -10
+          fi
+          echo ""
+
+          echo "### 📁 Modified Files"
+          if [ -n "${{ github.event.inputs.commit_hash }}" ]; then
+            git diff --name-only $CURRENT_VERSION..$TARGET_COMMIT | sed 's/^/- /' | head -15
+          else
+            git diff --name-only $CURRENT_VERSION..HEAD | sed 's/^/- /' | head -15
+          fi
+          echo ""
+
+          echo "### 📦 Cross-Platform Downloads"
+          if [[ "${{ github.event.inputs.build_platforms }}" == "all" || "${{ github.event.inputs.build_platforms }}" == *"linux"* ]]; then
+            echo "- **🐧 Linux**: \`a1-evo-acoustica-linux\`"
+          fi
+          if [[ "${{ github.event.inputs.build_platforms }}" == "all" || "${{ github.event.inputs.build_platforms }}" == *"macos"* ]]; then
+            echo "- **🍎 macOS (Intel)**: \`a1-evo-acoustica-macos-x64\`"
+            echo "- **🍎 macOS (Apple Silicon)**: \`a1-evo-acoustica-macos-arm64\`"
+          fi
+          if [[ "${{ github.event.inputs.build_platforms }}" == "all" || "${{ github.event.inputs.build_platforms }}" == *"windows"* ]]; then
+            echo "- **🪟 Windows**: \`a1-evo-acoustica-win-x64.exe\`"
+          fi
+          echo ""
+          echo "All executables include SHA256 checksums for verification."
+          echo ""
+
+          echo "### 📊 Release Information"
+          echo "- **Type**: $RELEASE_TYPE release"
+          echo "- **Triggered**: Manual dispatch by @${{ github.actor }}"
+          echo "- **Build Platforms**: ${{ github.event.inputs.build_platforms }}"
+          if [ -n "${{ github.event.inputs.commit_hash }}" ]; then
+            echo "- **Source**: Specific commit $TARGET_COMMIT"
+          else
+            echo "- **Source**: Latest commit"
+          fi
+          if [[ "${{ github.event.inputs.prerelease }}" == "true" ]]; then
+            echo "- **Status**: Pre-release"
+          fi
+          echo ""
+
+          echo "---"
+          echo "*Manual release • [Auto-Release Workflow](../../actions/workflows/release.yml) • [Manual Release Workflow](../../actions/workflows/manual-release.yml)*"
+        } > release_notes.md
+
+    - name: Build and package
+      if: github.event.inputs.dry_run != 'true'
+      run: |
+        echo "📦 Installing dependencies..."
+        npm ci
+
+        echo "🔨 Building v${{ needs.validate-inputs.outputs.normalized_version }} executables..."
+
+        # Determine build command based on platform selection
+        PLATFORMS="${{ github.event.inputs.build_platforms }}"
+
+        if [[ "$PLATFORMS" == "all" ]]; then
+          npm run build
+        else
+          echo "🎯 Building for selected platforms: $PLATFORMS"
+          npm run build
+        fi
+
+        # Create organized distribution
+        mkdir -p dist
+        BUILD_SUCCESS=true
+
+        for file in a1-evo-acoustica-*; do
+          if [ -f "$file" ]; then
+            echo "📦 Packaging: $file"
+            sha256sum "$file" > "${file}.sha256"
+            mv "$file" "dist/"
+            mv "${file}.sha256" "dist/"
+          else
+            echo "⚠️ Expected executable not found: $file"
+          fi
+        done
+
+        echo "✅ Build completed"
+        ls -la dist/
+
+    - name: Create tag and commit
+      if: github.event.inputs.dry_run != 'true'
+      run: |
+        NEW_VERSION="${{ needs.validate-inputs.outputs.normalized_version }}"
+        TARGET_COMMIT="${{ needs.validate-inputs.outputs.target_commit }}"
+
+        if [ -n "${{ github.event.inputs.commit_hash }}" ]; then
+          # For specific commits, just create tag without committing changes
+          git tag -a "v$NEW_VERSION" "$TARGET_COMMIT" -m "🎯 Manual release v$NEW_VERSION from commit $TARGET_COMMIT - Type: ${{ github.event.inputs.release_type }} - Platforms: ${{ github.event.inputs.build_platforms }} - Triggered by: ${{ github.actor }}"
+        else
+          # For latest commit, commit version changes first
+          git add package.json package-lock.json
+          [ -f "main.js" ] && git add main.js
+          [ -f "A1Evo.html" ] && git add A1Evo.html
+          [ -f "webWorker.js" ] && git add webWorker.js
+
+          # Commit if there are changes
+          if ! git diff --staged --quiet; then
+            git commit -m "🎯 Manual release v$NEW_VERSION - Release type: ${{ github.event.inputs.release_type }} - Triggered by: ${{ github.actor }} - Build platforms: ${{ github.event.inputs.build_platforms }} [skip-release]"
+            git push origin main
+            echo "✅ Committed version changes"
+          fi
+
+          git tag -a "v$NEW_VERSION" -m "🎯 Manual release v$NEW_VERSION - Type: ${{ github.event.inputs.release_type }} - Platforms: ${{ github.event.inputs.build_platforms }} - Triggered by: ${{ github.actor }}"
+        fi
+
+        git push origin "v$NEW_VERSION"
+        echo "✅ Tagged v$NEW_VERSION"
+
+    - name: Create GitHub Release
+      if: github.event.inputs.dry_run != 'true'
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: v${{ needs.validate-inputs.outputs.normalized_version }}
+        name: 🎯 A1 Evo Acoustica v${{ needs.validate-inputs.outputs.normalized_version }} (${{ github.event.inputs.release_type }})
+        body_path: release_notes.md
+        files: |
+          dist/*
+        prerelease: ${{ github.event.inputs.prerelease }}
+        draft: false
+        make_latest: ${{ github.event.inputs.make_latest }}
+        target_commitish: ${{ needs.validate-inputs.outputs.target_commit }}
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Success summary
+      run: |
+        NEW_VERSION="${{ needs.validate-inputs.outputs.normalized_version }}"
+        TARGET_COMMIT="${{ needs.validate-inputs.outputs.target_commit }}"
+
+        if [[ "${{ github.event.inputs.dry_run }}" == "true" ]]; then
+          echo "🧪 Dry run completed successfully!"
+          echo ""
+          echo "📋 Would have created:"
+          echo "├─ Version: $NEW_VERSION"
+          echo "├─ Type: ${{ github.event.inputs.release_type }}"
+          echo "├─ Latest: ${{ github.event.inputs.make_latest }}"
+          echo "├─ Pre-release: ${{ github.event.inputs.prerelease }}"
+          echo "├─ Platforms: ${{ github.event.inputs.build_platforms }}"
+          if [ -n "${{ github.event.inputs.commit_hash }}" ]; then
+            echo "└─ Target commit: $TARGET_COMMIT"
+          else
+            echo "└─ Target commit: Latest"
+          fi
+          echo ""
+          echo "✅ All validations passed - ready for actual release!"
+        else
+          echo "🎉 Manual release v$NEW_VERSION completed!"
+          echo ""
+          echo "📊 Release Summary:"
+          echo "├─ Version: $NEW_VERSION"
+          echo "├─ Type: ${{ github.event.inputs.release_type }} release"
+          echo "├─ Latest: ${{ github.event.inputs.make_latest }}"
+          echo "├─ Pre-release: ${{ github.event.inputs.prerelease }}"
+          echo "├─ Platforms: ${{ github.event.inputs.build_platforms }}"
+          echo "├─ Triggered by: @${{ github.actor }}"
+          if [ -n "${{ github.event.inputs.commit_hash }}" ]; then
+            echo "├─ Source: Specific commit $TARGET_COMMIT"
+          else
+            echo "├─ Source: Latest commit"
+          fi
+          echo "└─ Release: https://github.com/${{ github.repository }}/releases/tag/v$NEW_VERSION"
+          echo ""
+          echo "💡 Next steps:"
+          echo "• Monitor download metrics and user feedback"
+          echo "• Update documentation if needed"
+          echo "• Consider announcement in relevant channels"
+        fi

@@ -426,8 +426,7 @@ jobs:
 
         if [ -n "${{ github.event.inputs.commit_hash }}" ]; then
           # For specific commits, just create tag without committing changes
-          git tag -a "v$NEW_VERSION" "$TARGET_COMMIT" -m "🎯 Manual release v$NEW_VERSION from commit $TARGET_COMMIT - Type: ${{ github.event.inputs.release_type }} - Platforms: ${{ github.event.inputs.build_platforms }} - Triggered by: ${{ github.actor }}"
-        else
+          git tag -a "v$NEW_VERSION" "$TARGET_COMMIT" -m "🎯 Manual release v$NEW_VERSION from commit $TARGET_COMMIT - Type: ${{ github.event.inputs.release_type }} - Platforms: ${{ github.event.inputs.build_platforms }} - Triggered by: ${{ github.actor }}"        else
           # For latest commit, commit version changes first
           git add package.json package-lock.json
           [ -f "main.js" ] && git add main.js
@@ -437,7 +436,8 @@ jobs:
           # Commit if there are changes
           if ! git diff --staged --quiet; then
             git commit -m "🎯 Manual release v$NEW_VERSION - Release type: ${{ github.event.inputs.release_type }} - Triggered by: ${{ github.actor }} - Build platforms: ${{ github.event.inputs.build_platforms }} [skip-release]"
-            git push origin main            echo "✅ Committed version changes"
+            git push origin main
+            echo "✅ Committed version changes"
           fi
 
           git tag -a "v$NEW_VERSION" -m "🎯 Manual release v$NEW_VERSION - Type: ${{ github.event.inputs.release_type }} - Platforms: ${{ github.event.inputs.build_platforms }} - Triggered by: ${{ github.actor }}"

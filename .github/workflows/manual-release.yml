@@ -418,9 +418,7 @@ jobs:
         if: github.event.inputs.dry_run != 'true'
         run: |
           NEW_VERSION="${{ needs.validate-inputs.outputs.normalized_version }}"
-          TARGET_COMMIT="${{ needs.validate-inputs.outputs.target_commit }}"
-
-          if [ -n "${{ github.event.inputs.commit_hash }}" ]; then
+          TARGET_COMMIT="${{ needs.validate-inputs.outputs.target_commit }}"          if [ -n "${{ github.event.inputs.commit_hash }}" ]; then
             # For specific commits, just create tag without committing changes
             git tag -a "v$NEW_VERSION" "$TARGET_COMMIT" -m "🎯 Manual release v$NEW_VERSION from commit $TARGET_COMMIT - Type: ${{ github.event.inputs.release_type }} - Platforms: ${{ github.event.inputs.build_platforms }} - Triggered by: ${{ github.actor }}"
           else
@@ -433,7 +431,13 @@ jobs:
             # Commit if there are changes
             if ! git diff --staged --quiet; then
               git commit -m "🎯 Manual release v$NEW_VERSION - Release type: ${{ github.event.inputs.release_type }} - Triggered by: ${{ github.actor }} - Build platforms: ${{ github.event.inputs.build_platforms }} [skip-release]"
-              git push origin main
+
+              # Only push if we're on main branch, not detached HEAD
+              if git symbolic-ref HEAD >/dev/null 2>&1; then
+                git push origin HEAD
+              else
+                echo "⚠️ In detached HEAD state, skipping push to main"
+              fi
               echo "✅ Committed version changes"
             fi
 

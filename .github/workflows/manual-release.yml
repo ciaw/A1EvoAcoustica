@@ -103,9 +103,9 @@ jobs:
           CHANGES_DETECTED="false"
           if [ -z "$COMMIT_HASH" ]; then
             if ! git diff --quiet HEAD~1 HEAD 2>/dev/null || [ "$(git rev-list --count HEAD ^$(git describe --tags --abbrev=0 2>/dev/null || echo "HEAD~1"))" -gt 0 ]; then
-              CHANGES_DETECTED="true"
-              echo "📝 Changes detected since last release"
-            fi        else
+              CHANGES_DETECTED="true"              echo "📝 Changes detected since last release"
+            fi
+          else
             echo "📝 Releasing specific commit - skipping change detection"
           fi
 
@@ -352,7 +352,8 @@ jobs:
             echo "### 📦 Cross-Platform Downloads"
             if [[ "${{ github.event.inputs.build_platforms }}" == "all" || "${{ github.event.inputs.build_platforms }}" == *"linux"* ]]; then
               echo "- **🐧 Linux**: \`a1-evo-acoustica-linux\`"
-            fi            if [[ "${{ github.event.inputs.build_platforms }}" == "all" || "${{ github.event.inputs.build_platforms }}" == *"macos"* ]]; then
+            fi
+            if [[ "${{ github.event.inputs.build_platforms }}" == "all" || "${{ github.event.inputs.build_platforms }}" == *"macos"* ]]; then
               echo "- **🍎 macOS (Intel)**: \`a1-evo-acoustica-macos-x64\`"
               echo "- **🍎 macOS (Apple Silicon)**: \`a1-evo-acoustica-macos-arm64\`"
             fi

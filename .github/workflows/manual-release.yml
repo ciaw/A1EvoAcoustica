@@ -23,11 +23,6 @@ on:
         required: false
         type: string
         default: ''
-      make_latest:
-        description: 'Mark as latest release'
-        required: true
-        default: true
-        type: boolean
       build_platforms:
         description: 'Platforms to build'
         required: true
@@ -260,9 +255,7 @@ jobs:
           "hotfix") TYPE_EMOJI="🔥" ;;
           "prerelease") TYPE_EMOJI="🧪" ;;
           *) TYPE_EMOJI="📦" ;;
-        esac
-
-        {
+        esac        {
           echo "## $TYPE_EMOJI A1 Evo Acoustica v$NEW_VERSION"
           echo ""
 
@@ -270,20 +263,32 @@ jobs:
             echo "### 🎯 Release from Specific Commit"
             echo "**Commit Hash**: \`$TARGET_COMMIT\`"
             echo "**Commit Date**: $(git show -s --format=%ci $TARGET_COMMIT)"
-            echo "**Commit Message**: $(git show -s --format=%s $TARGET_COMMIT)"
+            echo ""
+
+            # Get the actual commit message and clean it up
+            COMMIT_MSG=$(git show -s --format=%s $TARGET_COMMIT)
+            COMMIT_BODY=$(git show -s --format=%b $TARGET_COMMIT)
+
+            echo "### 📝 Main Changes"
+            echo "**$COMMIT_MSG**"
+            if [ -n "$COMMIT_BODY" ]; then
+              echo ""
+              echo "$COMMIT_BODY"
+            fi
             echo ""
           fi
 
           if [ -n "$CUSTOM_NOTES" ]; then
-            echo "### 📝 Release Notes"
+            echo "### 📋 Additional Release Notes"
             echo "$CUSTOM_NOTES"
             echo ""
           fi
 
-          echo "### 🔄 Changes Since $CURRENT_VERSION"
+          echo "### 🔄 Other Changes Since $CURRENT_VERSION"
           if [ -n "${{ github.event.inputs.commit_hash }}" ]; then
-            echo "Changes up to commit $TARGET_COMMIT:"
-            git log $CURRENT_VERSION..$TARGET_COMMIT --pretty=format:"- %s" --no-merges | head -10
+            echo "Additional commits leading up to this release:"
+            # Exclude the main commit from the list of other changes
+            git log $CURRENT_VERSION..$TARGET_COMMIT^1 --pretty=format:"- %s" --no-merges | head -10
           else
             git log $CURRENT_VERSION..HEAD --pretty=format:"- %s" --no-merges | head -10
           fi
@@ -400,57 +405,4 @@ jobs:
       uses: softprops/action-gh-release@v1
       with:
         tag_name: v${{ needs.validate-inputs.outputs.normalized_version }}
-        name: 🎯 A1 Evo Acoustica v${{ needs.validate-inputs.outputs.normalized_version }} (${{ github.event.inputs.release_type }})
-        body_path: release_notes.md
-        files: |
-          dist/*
-        prerelease: ${{ github.event.inputs.prerelease }}
-        draft: false
-        make_latest: ${{ github.event.inputs.make_latest }}
-        target_commitish: ${{ needs.validate-inputs.outputs.target_commit }}
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-    - name: Success summary
-      run: |
-        NEW_VERSION="${{ needs.validate-inputs.outputs.normalized_version }}"
-        TARGET_COMMIT="${{ needs.validate_inputs.outputs.target_commit }}"
-
-        if [[ "${{ github.event.inputs.dry_run }}" == "true" ]]; then
-          echo "🧪 Dry run completed successfully!"
-          echo ""
-          echo "📋 Would have created:"
-          echo "├─ Version: $NEW_VERSION"
-          echo "├─ Type: ${{ github.event.inputs.release_type }}"
-          echo "├─ Latest: ${{ github.event.inputs.make_latest }}"
-          echo "├─ Pre-release: ${{ github.event.inputs.prerelease }}"
-          echo "├─ Platforms: ${{ github.event.inputs.build_platforms }}"
-          if [ -n "${{ github.event.inputs.commit_hash }}" ]; then
-            echo "└─ Target commit: $TARGET_COMMIT"
-          else
-            echo "└─ Target commit: Latest"
-          fi
-          echo ""
-          echo "✅ All validations passed - ready for actual release!"
-        else
-          echo "🎉 Manual release v$NEW_VERSION completed!"
-          echo ""
-          echo "📊 Release Summary:"
-          echo "├─ Version: $NEW_VERSION"
-          echo "├─ Type: ${{ github.event.inputs.release_type }} release"
-          echo "├─ Latest: ${{ github.event.inputs.make_latest }}"
-          echo "├─ Pre-release: ${{ github.event.inputs.prerelease }}"
-          echo "├─ Platforms: ${{ github.event.inputs.build_platforms }}"
-          echo "├─ Triggered by: @${{ github.actor }}"
-          if [ -n "${{ github.event.inputs.commit_hash }}" ]; then
-            echo "├─ Source: Specific commit $TARGET_COMMIT"
-          else
-            echo "├─ Source: Latest commit"
-          fi
-          echo "└─ Release: https://github.com/${{ github.repository }}/releases/tag/v$NEW_VERSION"
-          echo ""
-          echo "💡 Next steps:"
-          echo "• Monitor download metrics and user feedback"
-          echo "• Update documentation if needed"
-          echo "• Consider announcement in relevant channels"
-        fi
+        name: 🎯 A1 Evo Acoustica v${{ needs.validate_input

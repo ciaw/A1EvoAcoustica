@@ -409,16 +409,16 @@ jobs:
             else
               echo "⚠️ Expected executable not found: $file"
             fi
-          done
-
-          echo "✅ Build completed"
+          done          echo "✅ Build completed"
           ls -la dist/
 
       - name: Create tag and commit
         if: github.event.inputs.dry_run != 'true'
         run: |
           NEW_VERSION="${{ needs.validate-inputs.outputs.normalized_version }}"
-          TARGET_COMMIT="${{ needs.validate-inputs.outputs.target_commit }}"          if [ -n "${{ github.event.inputs.commit_hash }}" ]; then
+          TARGET_COMMIT="${{ needs.validate-inputs.outputs.target_commit }}"
+
+          if [ -n "${{ github.event.inputs.commit_hash }}" ]; then
             # For specific commits, just create tag without committing changes
             git tag -a "v$NEW_VERSION" "$TARGET_COMMIT" -m "🎯 Manual release v$NEW_VERSION from commit $TARGET_COMMIT - Type: ${{ github.event.inputs.release_type }} - Platforms: ${{ github.event.inputs.build_platforms }} - Triggered by: ${{ github.actor }}"
           else

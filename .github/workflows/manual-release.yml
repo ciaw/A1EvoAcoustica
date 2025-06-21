@@ -108,9 +108,7 @@ jobs:
           fi
         else
           echo "📝 Releasing specific commit - skipping change detection"
-        fi
-
-        # Normalize version with smart auto-increment for detected changes
+        fi        # Normalize version with smart auto-increment for detected changes
         if [[ "$VERSION" =~ ^([0-9]+)$ ]]; then
           if [[ "$CHANGES_DETECTED" == "true" && "$CURRENT_VERSION" =~ ^$VERSION\.([0-9]+)$ ]]; then
             NORMALIZED_VERSION="$VERSION.${BASH_REMATCH[1]}.1"
@@ -133,10 +131,33 @@ jobs:
           exit 1
         fi
 
-        # Check if version already exists
-        if git tag | grep -q "^v$NORMALIZED_VERSION$"; then
-          echo "❌ Version v$NORMALIZED_VERSION already exists"
-          exit 1
+        # Check if version already exists and auto-increment if needed
+        ORIGINAL_VERSION="$NORMALIZED_VERSION"
+        COUNTER=0
+        while git tag | grep -q "^v$NORMALIZED_VERSION$"; do
+          COUNTER=$((COUNTER + 1))
+          if [[ "$ORIGINAL_VERSION" =~ ^([0-9]+)\.([0-9]+)$ ]]; then
+            # X.Y format -> X.Y.1, X.Y.2, etc.
+            NORMALIZED_VERSION="$ORIGINAL_VERSION.$COUNTER"
+          elif [[ "$ORIGINAL_VERSION" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+            # X.Y.Z format -> increment Z
+            BASE_VERSION=$(echo "$ORIGINAL_VERSION" | sed 's/\.[0-9]*$//')
+            PATCH_VERSION=$(echo "$ORIGINAL_VERSION" | sed 's/.*\.//')
+            NEW_PATCH=$((PATCH_VERSION + COUNTER))
+            NORMALIZED_VERSION="$BASE_VERSION.$NEW_PATCH"
+          else
+            # X format -> X.0.1, X.0.2, etc.
+            NORMALIZED_VERSION="$ORIGINAL_VERSION.0.$COUNTER"
+          fi
+
+          if [ $COUNTER -gt 100 ]; then
+            echo "❌ Too many existing versions, stopping at counter $COUNTER"
+            exit 1
+          fi
+        done
+
+        if [ "$ORIGINAL_VERSION" != "$NORMALIZED_VERSION" ]; then
+          echo "🔄 Version conflict resolved: $ORIGINAL_VERSION already exists, using $NORMALIZED_VERSION"
         fi
 
         # Validate version is higher than current (skip for specific commits)

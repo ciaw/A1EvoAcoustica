@@ -222,6 +222,11 @@ jobs:
         NEW_VERSION="${{ steps.version.outputs.new }}"
         CURRENT_VERSION="${{ steps.version.outputs.current }}"
         COMMIT_MSG="${{ needs.smart-release-check.outputs.commit_message }}"
+        TARGET_COMMIT=$(git rev-parse HEAD)
+
+        # Release type detection
+        RELEASE_TYPE="patch"
+        TYPE_EMOJI="🐛"
 
         # Detect if we have a meaningful commit message vs generic upload
         IS_GENERIC_UPLOAD="false"
@@ -232,26 +237,43 @@ jobs:
         fi
 
         {
-          echo "## 🤖 A1 Evo Acoustica v$NEW_VERSION"
+          echo "## $TYPE_EMOJI A1 Evo Acoustica v$NEW_VERSION"
           echo ""
+
           if [ "$IS_GENERIC_UPLOAD" = "true" ]; then
             echo "### 🔄 Automatic Update"
             echo "Files were updated and automatically released as patch version."
             echo ""
             echo "**Modified Files**: $(git diff --name-only HEAD~1 HEAD | tr '\n' ', ' | sed 's/,$//')"
+            echo ""
           else
             echo "### ✨ What's New"
             echo "**$COMMIT_MSG**"
             echo ""
             echo "This release was automatically created based on the above changes."
             echo ""
-            echo "### 📁 Updated Files"
-            git diff --name-only HEAD~1 HEAD | sed 's/^/- /'
           fi
-          echo ""
-          echo "### 📋 Recent Development Activity"
-          git log v$CURRENT_VERSION..HEAD --pretty=format:"- %s" --no-merges 2>/dev/null | head -5 || git log --pretty=format:"- %s" --no-merges -5
-          echo ""
+
+          # Get other changes and filter out generic ones
+          OTHER_CHANGES=$(git log v$CURRENT_VERSION..HEAD --pretty=format:"- %s" --no-merges 2>/dev/null | grep -v "Add files via upload" | grep -v "Update " | grep -v "Create " | head -10 || git log --pretty=format:"- %s" --no-merges -5 | grep -v "Add files via upload" | grep -v "Update " | grep -v "Create ")
+
+          # Only show other changes section if there are meaningful changes
+          if [ -n "$OTHER_CHANGES" ]; then
+            echo "### 🔄 Recent Changes Since $CURRENT_VERSION"
+            echo "$OTHER_CHANGES"
+            echo ""
+          fi
+
+          # Get modified files
+          MODIFIED_FILES=$(git diff --name-only HEAD~1 HEAD | sed 's/^/- /' | head -15)
+
+          # Only show modified files if there are any
+          if [ -n "$MODIFIED_FILES" ]; then
+            echo "### 📁 Modified Files"
+            echo "$MODIFIED_FILES"
+            echo ""
+          fi
+
           echo "### 📦 Cross-Platform Downloads"
           echo "- **🐧 Linux**: \`a1-evo-acoustica-linux\`"
           echo "- **🍎 macOS (Intel)**: \`a1-evo-acoustica-macos-x64\`"
@@ -260,13 +282,21 @@ jobs:
           echo ""
           echo "All executables include SHA256 checksums for verification."
           echo ""
+
+          echo "### 📊 Release Information"
+          echo "- **Type**: $RELEASE_TYPE release"
+          echo "- **Triggered**: Automatic release on push to main"
+          echo "- **Build Platforms**: all"
+          echo "- **Source**: Latest commit $TARGET_COMMIT"
+          echo ""
+
           echo "### 🚀 Next Steps"
-          echo "- For custom release notes, use the **\"Create Release with Manual Version\"** workflow"
+          echo "- For custom release notes, use the **\"Manual Release with Custom Version\"** workflow"
           echo "- To skip auto-releases, add \`[skip-release]\` to commit messages"
           echo "- For major versions, trigger manual releases"
           echo ""
           echo "---"
-          echo "*Auto-generated release • [View Manual Release Options](../../actions/workflows/release.yml)*"
+          echo "*Automatic release • [Auto-Release Workflow](../../actions/workflows/release.yml) • [Manual Release Workflow](../../actions/workflows/manual-release.yml)*"
         } > release_notes.md
 
     - name: Build and package
@@ -327,7 +357,7 @@ jobs:
       uses: softprops/action-gh-release@v1
       with:
         tag_name: v${{ steps.version.outputs.new }}
-        name: 🤖 A1 Evo Acoustica v${{ steps.version.outputs.new }}
+        name: A1 Evo Acoustica v${{ steps.version.outputs.new }}
         body_path: release_notes.md
         files: |
           dist/*

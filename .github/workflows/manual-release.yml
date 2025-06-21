@@ -105,10 +105,11 @@ jobs:
           if ! git diff --quiet HEAD~1 HEAD 2>/dev/null || [ "$(git rev-list --count HEAD ^$(git describe --tags --abbrev=0 2>/dev/null || echo "HEAD~1"))" -gt 0 ]; then
             CHANGES_DETECTED="true"
             echo "📝 Changes detected since last release"
-          fi
-        else
+          fi        else
           echo "📝 Releasing specific commit - skipping change detection"
-        fi        # Normalize version with smart auto-increment for detected changes
+        fi
+
+        # Normalize version with smart auto-increment for detected changes
         if [[ "$VERSION" =~ ^([0-9]+)$ ]]; then
           if [[ "$CHANGES_DETECTED" == "true" && "$CURRENT_VERSION" =~ ^$VERSION\.([0-9]+)$ ]]; then
             NORMALIZED_VERSION="$VERSION.${BASH_REMATCH[1]}.1"
@@ -436,12 +437,13 @@ jobs:
           # Commit if there are changes
           if ! git diff --staged --quiet; then
             git commit -m "🎯 Manual release v$NEW_VERSION - Release type: ${{ github.event.inputs.release_type }} - Triggered by: ${{ github.actor }} - Build platforms: ${{ github.event.inputs.build_platforms }} [skip-release]"
-            git push origin main
-            echo "✅ Committed version changes"
+            git push origin main            echo "✅ Committed version changes"
           fi
 
           git tag -a "v$NEW_VERSION" -m "🎯 Manual release v$NEW_VERSION - Type: ${{ github.event.inputs.release_type }} - Platforms: ${{ github.event.inputs.build_platforms }} - Triggered by: ${{ github.actor }}"
-        fi        git push origin "v$NEW_VERSION"
+        fi
+
+        git push origin "v$NEW_VERSION"
         echo "✅ Tagged v$NEW_VERSION"
 
     - name: Create GitHub Release

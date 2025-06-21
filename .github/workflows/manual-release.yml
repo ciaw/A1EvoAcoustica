@@ -452,7 +452,7 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           tag_name: v${{ needs.validate-inputs.outputs.normalized_version }}
-          name: A1 Evo Acoustica v${{ needs.validate-inputs.outputs.normalized_version }} (${{ github.event.inputs.release_type }})
+          name: A1 Evo Acoustica v${{ needs.validate-inputs.outputs.normalized_version }}
           body_path: release_notes.md
           files: |
             dist/*

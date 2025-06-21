@@ -280,8 +280,6 @@ jobs:
           echo "- **🍎 macOS (Apple Silicon)**: \`a1-evo-acoustica-macos-arm64\`"
           echo "- **🪟 Windows**: \`a1-evo-acoustica-win-x64.exe\`"
           echo ""
-          echo "All executables include SHA256 checksums for verification."
-          echo ""
 
           echo "### 📊 Release Information"
           echo "- **Type**: $RELEASE_TYPE release"
@@ -314,9 +312,7 @@ jobs:
         for file in a1-evo-acoustica-*; do
           if [ -f "$file" ]; then
             echo "📦 Packaging: $file"
-            sha256sum "$file" > "${file}.sha256"
             mv "$file" "dist/"
-            mv "${file}.sha256" "dist/"
           else
             echo "⚠️ Expected executable not found: $file"
             BUILD_SUCCESS=false
@@ -363,7 +359,6 @@ jobs:
           dist/*
         prerelease: false
         draft: false
-        make_latest: ${{ steps.version.outputs.is_major_release }}
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

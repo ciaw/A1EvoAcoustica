@@ -1,302 +1,356 @@
-name: Create Release
+name: Smart Auto-Release (Detects Skip Patterns)
 
 on:
-  workflow_dispatch:
   push:
-    branches:
-      - main
+    branches: [ main ]
     paths:
-      - "package.json"
+      - 'main.js'
+      - 'A1Evo.html'
+      - 'webWorker.js'
+      - 'package.json'
+      - '*.js'
+      - '*.html'
 
 jobs:
-  # Job 1: Determine if a release is needed, handle versioning, and manage Git tags.
-  determine_release_action:
-    name: Determine Release Action & Prepare Tag
+  smart-release-check:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
+    # Skip if it's a workflow commit or contains skip patterns
+    if: >
+      !contains(github.event.head_commit.message, 'Release v') &&
+      !contains(github.event.head_commit.message, 'Auto-release v') &&
+      !contains(github.event.head_commit.message, '[skip-release]') &&
+      !contains(github.event.head_commit.message, '[no-release]') &&
+      !contains(github.event.head_commit.message, '[skip ci]') &&
+      github.actor != 'github-actions[bot]'
+
     outputs:
-      new_version: ${{ steps.get_version_info.outputs.new_version }}
-      should_release: ${{ steps.get_version_info.outputs.should_release }}
-      tag_name: ${{ steps.get_version_info.outputs.tag_name }}
-      commit_sha: ${{ github.sha }}
+      should_release: ${{ steps.analysis.outputs.should_release }}
+      release_type: ${{ steps.analysis.outputs.release_type }}
+      commit_message: ${{ steps.analysis.outputs.commit_message }}
 
     steps:
-      - name: Check out code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          fetch-tags: true
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 5
 
-      - name: Install jq
-        run: sudo apt-get update && sudo apt-get install -y jq
+    - name: Analyze changes and decide release
+      id: analysis
+      run: |
+        COMMIT_MSG="${{ github.event.head_commit.message }}"
 
-      - name: Get Version Info and Determine Release Action
-        id: get_version_info
-        run: |
-          echo "Event type: ${{ github.event_name }}"
-          current_version=$(jq -r .version package.json || echo "")
-          if [ -z "$current_version" ]; then
-            echo "::error file=package.json::Could not extract current version from package.json."
-            echo "should_release=false" >> $GITHUB_OUTPUT
-            exit 1
+        # Properly encode commit message for GitHub Output
+        {
+          echo "commit_message<<EOF"
+          echo "$COMMIT_MSG"
+          echo "EOF"
+        } >> $GITHUB_OUTPUT
+
+        # Get changed files
+        CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD)
+        echo "📁 Changed files:"
+        echo "$CHANGED_FILES"
+
+        # Default to no release
+        SHOULD_RELEASE="false"
+        RELEASE_TYPE="patch"
+
+        # Check for important file changes
+        IMPORTANT_CHANGES=""
+        if echo "$CHANGED_FILES" | grep -q "main.js"; then
+          IMPORTANT_CHANGES="$IMPORTANT_CHANGES main.js"
+        fi
+        if echo "$CHANGED_FILES" | grep -q "A1Evo.html"; then
+          IMPORTANT_CHANGES="$IMPORTANT_CHANGES A1Evo.html"
+        fi
+        if echo "$CHANGED_FILES" | grep -q "webWorker.js"; then
+          IMPORTANT_CHANGES="$IMPORTANT_CHANGES webWorker.js"
+        fi
+        if echo "$CHANGED_FILES" | grep -qE '\.(js|html)$'; then
+          IMPORTANT_CHANGES="$IMPORTANT_CHANGES other-js/html"
+        fi
+
+        # Analyze commit message patterns
+        if [[ "$COMMIT_MSG" =~ ^Add\ files\ via\ upload$ ]] || \
+           [[ "$COMMIT_MSG" =~ ^Add\ files\ via\ upload ]] || \
+           [[ "$COMMIT_MSG" =~ ^Update.*\.(js|html)$ ]] || \
+           [[ "$COMMIT_MSG" =~ ^Fix ]] || \
+           [[ "$COMMIT_MSG" =~ ^fix ]] || \
+           [[ "$COMMIT_MSG" =~ ^Bugfix ]] || \
+           [[ "$COMMIT_MSG" =~ ^Minor ]] || \
+           [[ "$COMMIT_MSG" =~ ^Small ]]; then
+
+          if [ -n "$IMPORTANT_CHANGES" ]; then
+            SHOULD_RELEASE="true"
+            echo "✅ Auto-release triggered"
+            echo "   Reason: Important files changed ($IMPORTANT_CHANGES)"
+            echo "   Pattern: $COMMIT_MSG"
           fi
-          echo "Current package.json version: $current_version"
+        fi
 
-          # Fetch all tags and get the latest one
-          git fetch --tags
-          latest_tag=$(git tag -l "v*" | sort -V | tail -n 1 || echo "")
+        # Check for major changes that should be manual
+        if echo "$CHANGED_FILES" | grep -q "package.json" && \
+           echo "$CHANGED_FILES" | wc -l | awk '{print ($1 > 3)}' | grep -q 1; then
+          echo "⚠️ Major changes detected - recommend manual release"
+          SHOULD_RELEASE="false"
+        fi
 
-          if [ "${{ github.event_name }}" == "workflow_dispatch" ] && [ -n "$latest_tag" ]; then
-            # Extract version number from latest tag (remove 'v' prefix)
-            latest_version=${latest_tag#v}
-            echo "Latest tag version: $latest_version"
-            echo "Package.json version: $current_version"
+        echo "should_release=$SHOULD_RELEASE" >> $GITHUB_OUTPUT
+        echo "release_type=$RELEASE_TYPE" >> $GITHUB_OUTPUT
 
-            # Compare versions using sort -V (version sort)
-            if [ "$(printf '%s\n%s' "$current_version" "$latest_version" | sort -V | tail -n 1)" = "$latest_version" ]; then
-              echo "Found newer tag $latest_tag. Using it for the build."
-              TAG_NAME="$latest_tag"
-              echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
-              echo "new_version=$latest_version" >> $GITHUB_OUTPUT
-              echo "should_release=true" >> $GITHUB_OUTPUT
-              # Checkout the tag to ensure we build from its commit
-              git checkout "$latest_tag"
-            else
-              echo "No newer tag found. Using package.json version."
-              TAG_NAME="v$current_version"
-              echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
-              echo "new_version=$current_version" >> $GITHUB_OUTPUT
-              echo "should_release=true" >> $GITHUB_OUTPUT
-            fi
-          else # Push event or no newer tag
-            echo "Push event. Checking for version change."
-            previous_version=$(git show HEAD~1:package.json 2>/dev/null | jq -r .version || echo "")
-            echo "Previous package.json version: $previous_version"
+        echo "🤖 Auto-release decision: $SHOULD_RELEASE"
+        if [ "$SHOULD_RELEASE" = "true" ]; then
+          echo "📋 Will auto-increment patch version"
+        else
+          echo "📋 Use manual workflow for this release"
+        fi
 
-            if [ "$current_version" != "$previous_version" ]; then
-              echo "Version changed from '$previous_version' to '$current_version'. Proceeding with release."
-              echo "should_release=true" >> $GITHUB_OUTPUT
-            else
-              echo "Version '$current_version' has not changed. No release will be created for this push."
-              echo "should_release=false" >> $GITHUB_OUTPUT
-            fi
-          fi
-
-      - name: Prepare Tag & Handle Existing Release (on manual dispatch)
-        if: steps.get_version_info.outputs.should_release == 'true' && github.event_name == 'workflow_dispatch'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG_NAME_ENV: ${{ steps.get_version_info.outputs.tag_name }}
-        run: |
-          echo "Manual dispatch: Managing tag $TAG_NAME_ENV and any existing release."
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
-          echo "Checking for existing GitHub release for tag $TAG_NAME_ENV and deleting if found..."
-          if gh release view "$TAG_NAME_ENV" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
-            echo "Existing release for tag $TAG_NAME_ENV found. Deleting it..."
-            gh release delete "$TAG_NAME_ENV" --repo "$GITHUB_REPOSITORY" --yes
-            echo "Existing release for tag $TAG_NAME_ENV deleted."
-          else
-            echo "No existing GitHub release found for tag $TAG_NAME_ENV."
-          fi
-
-          echo "Deleting local tag $TAG_NAME_ENV if it exists..."
-          git tag -d "$TAG_NAME_ENV" || true # Suppress error if tag doesn't exist
-          echo "Deleting remote tag $TAG_NAME_ENV if it exists..."
-          git push origin --delete "$TAG_NAME_ENV" || true # Suppress error if tag doesn't exist on remote
-
-          echo "Creating and pushing new tag $TAG_NAME_ENV..."
-          git tag "$TAG_NAME_ENV"
-          git push origin "$TAG_NAME_ENV"
-
-      - name: Create and Push Git Tag (on version change push)
-        if: steps.get_version_info.outputs.should_release == 'true' && github.event_name == 'push'
-        env:
-          TAG_NAME_ENV: ${{ steps.get_version_info.outputs.tag_name }}
-        run: |
-          echo "Push event: Creating and pushing new tag $TAG_NAME_ENV"
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag "$TAG_NAME_ENV" # This will fail if the tag already exists locally (good for new versions)
-          git push origin "$TAG_NAME_ENV" # This will fail if the tag exists on remote and points to a different commit
-
-  # --- Build Jobs (Parallel) ---
-  build_linux:
-    name: Build Linux (x64)
-    needs: determine_release_action
-    if: needs.determine_release_action.outputs.should_release == 'true'
+  auto-patch-release:
+    needs: smart-release-check
     runs-on: ubuntu-latest
-    steps:
-      - name: Check out code
-        uses: actions/checkout@v4
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "18"
-          cache: "npm"
-      - name: Install dependencies
-        run: npm ci
-      - name: Build Linux executable
-        run: npm run build-linux
-      - name: Upload Linux Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: a1-evo-acoustica-linux
-          path: ./a1-evo-acoustica-linux
-          if-no-files-found: error
+    if: needs.smart-release-check.outputs.should_release == 'true'
 
-  build_macos_x64:
-    name: Build macOS (x64 Intel)
-    needs: determine_release_action
-    if: needs.determine_release_action.outputs.should_release == 'true'
-    runs-on: macos-13
-    steps:
-      - name: Check out code
-        uses: actions/checkout@v4
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "18"
-          cache: "npm"
-      - name: Install dependencies
-        run: npm ci
-      - name: Build macOS x64 executable
-        run: npm run build-macos-x64
-      - name: Ad-hoc sign macOS x64 executable
-        run: codesign --force --deep --sign - ./a1-evo-acoustica-macos-x64
-      - name: Upload macOS x64 Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: a1-evo-acoustica-macos-x64
-          path: ./a1-evo-acoustica-macos-x64
-          if-no-files-found: error
-
-  build_macos_arm64:
-    name: Build macOS (ARM64 Apple Silicon)
-    needs: determine_release_action
-    if: needs.determine_release_action.outputs.should_release == 'true'
-    runs-on: macos-14
-    steps:
-      - name: Check out code
-        uses: actions/checkout@v4
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "18"
-          cache: "npm"
-      - name: Install dependencies
-        run: npm ci
-      - name: Build macOS arm64 executable
-        run: npm run build-macos-arm64
-      - name: Ad-hoc sign macOS arm64 executable
-        run: codesign --force --deep --sign - ./a1-evo-acoustica-macos-arm64
-      - name: Upload macOS arm64 Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: a1-evo-acoustica-macos-arm64
-          path: ./a1-evo-acoustica-macos-arm64
-          if-no-files-found: error
-
-  build_windows:
-    name: Build Windows (x64)
-    needs: determine_release_action
-    if: needs.determine_release_action.outputs.should_release == 'true'
-    runs-on: windows-latest
-    steps:
-      - name: Check out code
-        uses: actions/checkout@v4
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "18"
-          cache: "npm"
-      - name: Install dependencies
-        run: npm ci
-      - name: Build Windows executable
-        run: npm run build-windows
-      - name: Upload Windows Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: a1-evo-acoustica-win-x64.exe
-          path: ./a1-evo-acoustica-win-x64.exe
-          if-no-files-found: error
-
-  publish_release:
-    name: Publish Release
-    needs:
-      - determine_release_action
-      - build_linux
-      - build_macos_x64
-      - build_macos_arm64
-      - build_windows
-    if: needs.determine_release_action.outputs.should_release == 'true' # Only run if a release is determined to be necessary
-    runs-on: ubuntu-latest
     permissions:
       contents: write
+      pull-requests: write
+
     steps:
-      - name: Download all build artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: ./artifacts
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: List downloaded files for verification
-        run: ls -R ./artifacts
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
 
-      - name: Create GitHub Release
-        id: create_release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: ${{ needs.determine_release_action.outputs.tag_name }}
-          release_name: Release ${{ needs.determine_release_action.outputs.tag_name }}
-          body: |
-            Automated release for version ${{ needs.determine_release_action.outputs.new_version }}
-            Triggered by: ${{ github.event_name }}
-            Commit: ${{ needs.determine_release_action.outputs.commit_sha }}
+    - name: Configure Git
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action Bot"
 
-            Contains Linux, MacOS (x64, arm64), and Windows (x64) executables.
-          draft: false
-          prerelease: false
+    - name: Calculate next version
+      id: version
+      run: |
+        CURRENT_VERSION=$(node -p "require('./package.json').version")
+        COMMIT_MSG="${{ needs.smart-release-check.outputs.commit_message }}"
 
-      - name: Upload Linux Asset
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./artifacts/a1-evo-acoustica-linux/a1-evo-acoustica-linux
-          asset_name: a1-evo-acoustica-linux
-          asset_content_type: application/octet-stream
+        # Check if commit message contains a version number
+        VERSION_IN_COMMIT=""
+        if [[ "$COMMIT_MSG" =~ [vV]?([0-9]+)(\.[0-9]+)? ]]; then
+          VERSION_IN_COMMIT="${BASH_REMATCH[1]}"
+          if [ -n "${BASH_REMATCH[2]}" ]; then
+            VERSION_IN_COMMIT="${BASH_REMATCH[1]}${BASH_REMATCH[2]}"
+          fi
+          echo "📋 Found version in commit: $VERSION_IN_COMMIT"
+        fi
 
-      - name: Upload macOS x64 Asset
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./artifacts/a1-evo-acoustica-macos-x64/a1-evo-acoustica-macos-x64
-          asset_name: a1-evo-acoustica-macos-x64
-          asset_content_type: application/octet-stream
+        # Smart version increment
+        IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT_VERSION"
 
-      - name: Upload macOS arm64 Asset
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./artifacts/a1-evo-acoustica-macos-arm64/a1-evo-acoustica-macos-arm64
-          asset_name: a1-evo-acoustica-macos-arm64
-          asset_content_type: application/octet-stream
+        if [ -n "$VERSION_IN_COMMIT" ]; then
+          if [[ "$VERSION_IN_COMMIT" =~ ^([0-9]+)\.([0-9]+)$ ]]; then
+            NEW_VERSION="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}"
+          else
+            NEW_VERSION="$VERSION_IN_COMMIT.0"
+          fi
+          IS_MAJOR_RELEASE="true"
+        else
+          NEW_PATCH=$((PATCH + 1))
+          NEW_VERSION="$MAJOR.$MINOR.$NEW_PATCH"
+          if [ "$NEW_PATCH" = "1" ] || [ "$NEW_PATCH" = "2" ]; then
+            IS_MAJOR_RELEASE="true"
+          else
+            IS_MAJOR_RELEASE="false"
+          fi
+        fi
 
-      - name: Upload Windows Asset
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./artifacts/a1-evo-acoustica-win-x64.exe/a1-evo-acoustica-win-x64.exe
-          asset_name: a1-evo-acoustica-win-x64.exe
-          asset_content_type: application/vnd.microsoft.portable-executable
+        echo "current=$CURRENT_VERSION" >> $GITHUB_OUTPUT
+        echo "new=$NEW_VERSION" >> $GITHUB_OUTPUT
+        echo "is_major_release=$IS_MAJOR_RELEASE" >> $GITHUB_OUTPUT
+
+        echo "📈 Smart auto-increment:"
+        echo "  From: $CURRENT_VERSION"
+        echo "  To:   $NEW_VERSION"
+        if [ -n "$VERSION_IN_COMMIT" ]; then
+          echo "  Type: Version from commit message"
+        else
+          echo "  Type: Patch increment"
+        fi
+        echo "  Major release: $IS_MAJOR_RELEASE"
+
+    - name: Update versions everywhere
+      run: |
+        NEW_VERSION="${{ steps.version.outputs.new }}"
+        echo "🔄 Updating version to $NEW_VERSION in all files..."
+
+        # Update package.json
+        npm version $NEW_VERSION --no-git-tag-version
+
+        # Update main.js - multiple patterns
+        if [ -f "main.js" ]; then
+          sed -i "s/const version = ['\''\"]*[^'\''\"]*['\''\"]/const version = '$NEW_VERSION'/g" main.js
+          sed -i "s/var version = ['\''\"]*[^'\''\"]*['\''\"]/var version = '$NEW_VERSION'/g" main.js
+          sed -i "s/let version = ['\''\"]*[^'\''\"]*['\''\"]/let version = '$NEW_VERSION'/g" main.js
+          sed -i "s/version = ['\''\"]*[^'\''\"]*['\''\"]/version = '$NEW_VERSION'/g" main.js
+          sed -i "s/const evoVersion = ['\''\"]*[^'\''\"]*['\''\"]/const evoVersion = '$NEW_VERSION'/g" main.js
+          sed -i "s/var evoVersion = ['\''\"]*[^'\''\"]*['\''\"]/var evoVersion = '$NEW_VERSION'/g" main.js
+          sed -i "s/let evoVersion = ['\''\"]*[^'\''\"]*['\''\"]/let evoVersion = '$NEW_VERSION'/g" main.js
+          sed -i "s/evoVersion = ['\''\"]*[^'\''\"]*['\''\"]/evoVersion = '$NEW_VERSION'/g" main.js
+          echo "✅ Updated main.js"
+        fi
+
+        # Update A1Evo.html
+        if [ -f "A1Evo.html" ]; then
+          sed -i "s/evoVersion = ['\''\"]*[^'\''\"]*['\''\"]/evoVersion = '$NEW_VERSION'/g" A1Evo.html
+          sed -i "s/const evoVersion = ['\''\"]*[^'\''\"]*['\''\"]/const evoVersion = '$NEW_VERSION'/g" A1Evo.html
+          sed -i "s/var evoVersion = ['\''\"]*[^'\''\"]*['\''\"]/var evoVersion = '$NEW_VERSION'/g" A1Evo.html
+          echo "✅ Updated A1Evo.html"
+        fi
+
+        # Update webWorker.js if it exists
+        if [ -f "webWorker.js" ]; then
+          sed -i "s/version = ['\''\"]*[^'\''\"]*['\''\"]/version = '$NEW_VERSION'/g" webWorker.js
+          echo "✅ Updated webWorker.js"
+        fi
+
+    - name: Generate smart release notes
+      run: |
+        NEW_VERSION="${{ steps.version.outputs.new }}"
+        CURRENT_VERSION="${{ steps.version.outputs.current }}"
+        COMMIT_MSG="${{ needs.smart-release-check.outputs.commit_message }}"
+
+        # Detect if we have a meaningful commit message vs generic upload
+        IS_GENERIC_UPLOAD="false"
+        if [[ "$COMMIT_MSG" == "Add files via upload" ]] || \
+           [[ "$COMMIT_MSG" =~ ^Add\ files\ via\ upload$ ]] || \
+           [[ "$COMMIT_MSG" =~ ^Update\ .+\.(js|html)$ ]]; then
+          IS_GENERIC_UPLOAD="true"
+        fi
+
+        {
+          echo "## 🤖 A1 Evo Acoustica v$NEW_VERSION"
+          echo ""
+          if [ "$IS_GENERIC_UPLOAD" = "true" ]; then
+            echo "### 🔄 Automatic Update"
+            echo "Files were updated and automatically released as patch version."
+            echo ""
+            echo "**Modified Files**: $(git diff --name-only HEAD~1 HEAD | tr '\n' ', ' | sed 's/,$//')"
+          else
+            echo "### ✨ What's New"
+            echo "**$COMMIT_MSG**"
+            echo ""
+            echo "This release was automatically created based on the above changes."
+            echo ""
+            echo "### 📁 Updated Files"
+            git diff --name-only HEAD~1 HEAD | sed 's/^/- /'
+          fi
+          echo ""
+          echo "### 📋 Recent Development Activity"
+          git log v$CURRENT_VERSION..HEAD --pretty=format:"- %s" --no-merges 2>/dev/null | head -5 || git log --pretty=format:"- %s" --no-merges -5
+          echo ""
+          echo "### 📦 Cross-Platform Downloads"
+          echo "- **🐧 Linux**: \`a1-evo-acoustica-linux\`"
+          echo "- **🍎 macOS (Intel)**: \`a1-evo-acoustica-macos-x64\`"
+          echo "- **🍎 macOS (Apple Silicon)**: \`a1-evo-acoustica-macos-arm64\`"
+          echo "- **🪟 Windows**: \`a1-evo-acoustica-win-x64.exe\`"
+          echo ""
+          echo "All executables include SHA256 checksums for verification."
+          echo ""
+          echo "### 🚀 Next Steps"
+          echo "- For custom release notes, use the **\"Create Release with Manual Version\"** workflow"
+          echo "- To skip auto-releases, add \`[skip-release]\` to commit messages"
+          echo "- For major versions, trigger manual releases"
+          echo ""
+          echo "---"
+          echo "*Auto-generated release • [View Manual Release Options](../../actions/workflows/release.yml)*"
+        } > release_notes.md
+
+    - name: Build and package
+      run: |
+        echo "📦 Installing dependencies..."
+        npm ci
+
+        echo "🔨 Building v${{ steps.version.outputs.new }} executables..."
+        npm run build
+
+        # Create organized distribution
+        mkdir -p dist
+        BUILD_SUCCESS=true
+
+        for file in a1-evo-acoustica-*; do
+          if [ -f "$file" ]; then
+            echo "📦 Packaging: $file"
+            sha256sum "$file" > "${file}.sha256"
+            mv "$file" "dist/"
+            mv "${file}.sha256" "dist/"
+          else
+            echo "⚠️ Expected executable not found: $file"
+            BUILD_SUCCESS=false
+          fi
+        done
+
+        if [ "$BUILD_SUCCESS" = "true" ]; then
+          echo "✅ All executables built successfully"
+          ls -la dist/
+        else
+          echo "❌ Some builds failed"
+          exit 1
+        fi
+
+    - name: Commit and tag
+      run: |
+        NEW_VERSION="${{ steps.version.outputs.new }}"
+
+        # Stage all version changes
+        git add package.json package-lock.json
+        [ -f "main.js" ] && git add main.js
+        [ -f "A1Evo.html" ] && git add A1Evo.html
+        [ -f "webWorker.js" ] && git add webWorker.js
+
+        # Commit if there are changes
+        if ! git diff --staged --quiet; then
+          git commit -m "🤖 Auto-release v$NEW_VERSION - Automatically incremented patch version from trigger: ${{ needs.smart-release-check.outputs.commit_message }} | Previous: ${{ steps.version.outputs.current }} → Current: $NEW_VERSION [skip-release]"
+          git push origin main
+          echo "✅ Committed version changes"
+        fi
+
+        # Create and push tag
+        git tag -a "v$NEW_VERSION" -m "🤖 Auto-release v$NEW_VERSION - Automated patch release triggered by file updates. Built executables for all supported platforms."
+        git push origin "v$NEW_VERSION"
+        echo "✅ Tagged v$NEW_VERSION"
+
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: v${{ steps.version.outputs.new }}
+        name: 🤖 A1 Evo Acoustica v${{ steps.version.outputs.new }}
+        body_path: release_notes.md
+        files: |
+          dist/*
+        prerelease: false
+        draft: false
+        make_latest: ${{ steps.version.outputs.is_major_release }}
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Success summary
+      run: |
+        NEW_VERSION="${{ steps.version.outputs.new }}"
+        echo "🎉 Auto-release v$NEW_VERSION completed!"
+        echo ""
+        echo "📊 Release Summary:"
+        echo "├─ Trigger: ${{ needs.smart-release-check.outputs.commit_message }}"
+        echo "├─ Version: ${{ steps.version.outputs.current }} → $NEW_VERSION"
+        echo "├─ Type: Automatic patch increment"
+        echo "├─ Is Major Release: ${{ steps.version.outputs.is_major_release }}"
+        echo "├─ Executables: ✅ Built for all platforms"
+        echo "└─ Release: https://github.com/${{ github.repository }}/releases/tag/v$NEW_VERSION"
+        echo ""
+        echo "💡 Pro Tips:"
+        echo "• Add '[skip-release]' to commit messages to prevent auto-releases"
+        echo "• Use manual workflow for major versions or custom release notes"
+        echo "• Next suggested versions: $NEW_VERSION → $(echo $NEW_VERSION | awk -F. '{print $1"."$2"."($3+1)}')"

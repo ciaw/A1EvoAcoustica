@@ -396,9 +396,7 @@ jobs:
           else
             echo "🎯 Building for selected platforms: $PLATFORMS"
             npm run build
-          fi
-
-          # Create organized distribution
+          fi          # Create organized distribution
           mkdir -p dist
           BUILD_SUCCESS=true
 
@@ -409,7 +407,9 @@ jobs:
             else
               echo "⚠️ Expected executable not found: $file"
             fi
-          done          echo "✅ Build completed"
+          done
+
+          echo "✅ Build completed"
           ls -la dist/
 
       - name: Create tag and commit

@@ -271,7 +271,9 @@ jobs:
         RELEASE_TYPE="${{ github.event.inputs.release_type }}"
         CUSTOM_NOTES="${{ github.event.inputs.release_notes }}"
         TARGET_COMMIT="${{ needs.validate-inputs.outputs.target_commit }}"
-        CURRENT_VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")        # Release type emojis
+        CURRENT_VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+
+        # Release type emojis
         case "$RELEASE_TYPE" in
           "major") TYPE_EMOJI="🚀" ;;
           "minor") TYPE_EMOJI="✨" ;;
@@ -295,13 +297,16 @@ jobs:
             COMMIT_MSG=$(git show -s --format=%s $TARGET_COMMIT)
             COMMIT_BODY=$(git show -s --format=%b $TARGET_COMMIT)
 
-            echo "### 📝 Main Changes"
-            echo "**$COMMIT_MSG**"
-            if [ -n "$COMMIT_BODY" ]; then
+            # Only show main changes if commit message is not generic
+            if [[ "$COMMIT_MSG" != "Add files via upload" && "$COMMIT_MSG" != "Update "* && "$COMMIT_MSG" != "Create "* ]]; then
+              echo "### 📝 Main Changes"
+              echo "**$COMMIT_MSG**"
+              if [ -n "$COMMIT_BODY" ]; then
+                echo ""
+                echo "$COMMIT_BODY"
+              fi
               echo ""
-              echo "$COMMIT_BODY"
             fi
-            echo ""
           fi
 
           if [ -n "$CUSTOM_NOTES" ]; then
@@ -310,23 +315,38 @@ jobs:
             echo ""
           fi
 
-          echo "### 🔄 Other Changes Since $CURRENT_VERSION"
+          # Get other changes and filter out generic ones
+          OTHER_CHANGES=""
           if [ -n "${{ github.event.inputs.commit_hash }}" ]; then
-            echo "Additional commits leading up to this release:"
-            # Exclude the main commit from the list of other changes
-            git log $CURRENT_VERSION..$TARGET_COMMIT^1 --pretty=format:"- %s" --no-merges | head -10
+            OTHER_CHANGES=$(git log $CURRENT_VERSION..$TARGET_COMMIT^1 --pretty=format:"- %s" --no-merges | grep -v "Add files via upload" | grep -v "Update " | grep -v "Create " | head -10)
           else
-            git log $CURRENT_VERSION..HEAD --pretty=format:"- %s" --no-merges | head -10
+            OTHER_CHANGES=$(git log $CURRENT_VERSION..HEAD --pretty=format:"- %s" --no-merges | grep -v "Add files via upload" | grep -v "Update " | grep -v "Create " | head -10)
           fi
-          echo ""
 
-          echo "### 📁 Modified Files"
-          if [ -n "${{ github.event.inputs.commit_hash }}" ]; then
-            git diff --name-only $CURRENT_VERSION..$TARGET_COMMIT | sed 's/^/- /' | head -15
-          else
-            git diff --name-only $CURRENT_VERSION..HEAD | sed 's/^/- /' | head -15
+          # Only show other changes section if there are meaningful changes
+          if [ -n "$OTHER_CHANGES" ]; then
+            echo "### 🔄 Other Changes Since $CURRENT_VERSION"
+            if [ -n "${{ github.event.inputs.commit_hash }}" ]; then
+              echo "Additional commits leading up to this release:"
+            fi
+            echo "$OTHER_CHANGES"
+            echo ""
           fi
-          echo ""
+
+          # Get modified files
+          MODIFIED_FILES=""
+          if [ -n "${{ github.event.inputs.commit_hash }}" ]; then
+            MODIFIED_FILES=$(git diff --name-only $CURRENT_VERSION..$TARGET_COMMIT | sed 's/^/- /' | head -15)
+          else
+            MODIFIED_FILES=$(git diff --name-only $CURRENT_VERSION..HEAD | sed 's/^/- /' | head -15)
+          fi
+
+          # Only show modified files if there are any
+          if [ -n "$MODIFIED_FILES" ]; then
+            echo "### 📁 Modified Files"
+            echo "$MODIFIED_FILES"
+            echo ""
+          fi
 
           echo "### 📦 Cross-Platform Downloads"
           if [[ "${{ github.event.inputs.build_platforms }}" == "all" || "${{ github.event.inputs.build_platforms }}" == *"linux"* ]]; then
@@ -421,9 +441,7 @@ jobs:
           fi
 
           git tag -a "v$NEW_VERSION" -m "🎯 Manual release v$NEW_VERSION - Type: ${{ github.event.inputs.release_type }} - Platforms: ${{ github.event.inputs.build_platforms }} - Triggered by: ${{ github.actor }}"
-        fi
-
-        git push origin "v$NEW_VERSION"
+        fi        git push origin "v$NEW_VERSION"
         echo "✅ Tagged v$NEW_VERSION"
 
     - name: Create GitHub Release
@@ -434,7 +452,8 @@ jobs:
         name: 🎯 A1 Evo Acoustica v${{ needs.validate-inputs.outputs.normalized_version }} (${{ github.event.inputs.release_type }})
         body_path: release_notes.md
         files: |
-          dist/*        prerelease: ${{ github.event.inputs.prerelease }}
+          dist/*
+        prerelease: ${{ github.event.inputs.prerelease }}
         draft: false
         target_commitish: ${{ needs.validate-inputs.outputs.target_commit }}
       env:

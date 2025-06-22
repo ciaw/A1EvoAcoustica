@@ -29,81 +29,81 @@ jobs:
       commit_message: ${{ steps.analysis.outputs.commit_message }}
 
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 5
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 5
 
-    - name: Analyze changes and decide release
-      id: analysis
-      run: |
-        COMMIT_MSG="${{ github.event.head_commit.message }}"
-
-        # Properly encode commit message for GitHub Output
-        {
-          echo "commit_message<<EOF"
-          echo "$COMMIT_MSG"
-          echo "EOF"
-        } >> $GITHUB_OUTPUT
-
-        # Get changed files
-        CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD)
-        echo "📁 Changed files:"
-        echo "$CHANGED_FILES"
-
-        # Default to no release
-        SHOULD_RELEASE="false"
-        RELEASE_TYPE="patch"
-
-        # Check for important file changes
-        IMPORTANT_CHANGES=""
-        if echo "$CHANGED_FILES" | grep -q "main.js"; then
-          IMPORTANT_CHANGES="$IMPORTANT_CHANGES main.js"
-        fi
-        if echo "$CHANGED_FILES" | grep -q "A1Evo.html"; then
-          IMPORTANT_CHANGES="$IMPORTANT_CHANGES A1Evo.html"
-        fi
-        if echo "$CHANGED_FILES" | grep -q "webWorker.js"; then
-          IMPORTANT_CHANGES="$IMPORTANT_CHANGES webWorker.js"
-        fi
-        if echo "$CHANGED_FILES" | grep -qE '\.(js|html)$'; then
-          IMPORTANT_CHANGES="$IMPORTANT_CHANGES other-js/html"
-        fi
-
-        # Analyze commit message patterns
-        if [[ "$COMMIT_MSG" =~ ^Add\ files\ via\ upload$ ]] || \
-           [[ "$COMMIT_MSG" =~ ^Add\ files\ via\ upload ]] || \
-           [[ "$COMMIT_MSG" =~ ^Update.*\.(js|html)$ ]] || \
-           [[ "$COMMIT_MSG" =~ ^Fix ]] || \
-           [[ "$COMMIT_MSG" =~ ^fix ]] || \
-           [[ "$COMMIT_MSG" =~ ^Bugfix ]] || \
-           [[ "$COMMIT_MSG" =~ ^Minor ]] || \
-           [[ "$COMMIT_MSG" =~ ^Small ]]; then
-
-          if [ -n "$IMPORTANT_CHANGES" ]; then
-            SHOULD_RELEASE="true"
-            echo "✅ Auto-release triggered"
-            echo "   Reason: Important files changed ($IMPORTANT_CHANGES)"
-            echo "   Pattern: $COMMIT_MSG"
-          fi
-        fi
-
-        # Check for major changes that should be manual
-        if echo "$CHANGED_FILES" | grep -q "package.json" && \
-           echo "$CHANGED_FILES" | wc -l | awk '{print ($1 > 3)}' | grep -q 1; then
-          echo "⚠️ Major changes detected - recommend manual release"
+      - name: Analyze changes and decide release
+        id: analysis
+        run: |
+          COMMIT_MSG="${{ github.event.head_commit.message }}"
+          
+          # Properly encode commit message for GitHub Output
+          {
+            echo "commit_message<<EOF"
+            echo "$COMMIT_MSG"
+            echo "EOF"
+          } >> $GITHUB_OUTPUT
+          
+          # Get changed files
+          CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD)
+          echo "📁 Changed files:"
+          echo "$CHANGED_FILES"
+          
+          # Default to no release
           SHOULD_RELEASE="false"
-        fi
-
-        echo "should_release=$SHOULD_RELEASE" >> $GITHUB_OUTPUT
-        echo "release_type=$RELEASE_TYPE" >> $GITHUB_OUTPUT
-
-        echo "🤖 Auto-release decision: $SHOULD_RELEASE"
-        if [ "$SHOULD_RELEASE" = "true" ]; then
-          echo "📋 Will auto-increment patch version"
-        else
-          echo "📋 Use manual workflow for this release"
-        fi
+          RELEASE_TYPE="patch"
+          
+          # Check for important file changes
+          IMPORTANT_CHANGES=""
+          if echo "$CHANGED_FILES" | grep -q "main.js"; then
+            IMPORTANT_CHANGES="$IMPORTANT_CHANGES main.js"
+          fi
+          if echo "$CHANGED_FILES" | grep -q "A1Evo.html"; then
+            IMPORTANT_CHANGES="$IMPORTANT_CHANGES A1Evo.html"
+          fi
+          if echo "$CHANGED_FILES" | grep -q "webWorker.js"; then
+            IMPORTANT_CHANGES="$IMPORTANT_CHANGES webWorker.js"
+          fi
+          if echo "$CHANGED_FILES" | grep -qE '\.(js|html)$'; then
+            IMPORTANT_CHANGES="$IMPORTANT_CHANGES other-js/html"
+          fi
+          
+          # Analyze commit message patterns
+          if [[ "$COMMIT_MSG" =~ ^Add\ files\ via\ upload$ ]] || \
+             [[ "$COMMIT_MSG" =~ ^Add\ files\ via\ upload ]] || \
+             [[ "$COMMIT_MSG" =~ ^Update.*\.(js|html)$ ]] || \
+             [[ "$COMMIT_MSG" =~ ^Fix ]] || \
+             [[ "$COMMIT_MSG" =~ ^fix ]] || \
+             [[ "$COMMIT_MSG" =~ ^Bugfix ]] || \
+             [[ "$COMMIT_MSG" =~ ^Minor ]] || \
+             [[ "$COMMIT_MSG" =~ ^Small ]]; then
+          
+            if [ -n "$IMPORTANT_CHANGES" ]; then
+              SHOULD_RELEASE="true"
+              echo "✅ Auto-release triggered"
+              echo "   Reason: Important files changed ($IMPORTANT_CHANGES)"
+              echo "   Pattern: $COMMIT_MSG"
+            fi
+          fi
+          
+          # Check for major changes that should be manual
+          if echo "$CHANGED_FILES" | grep -q "package.json" && \
+             echo "$CHANGED_FILES" | wc -l | awk '{print ($1 > 3)}' | grep -q 1; then
+            echo "⚠️ Major changes detected - recommend manual release"
+            SHOULD_RELEASE="false"
+          fi
+          
+          echo "should_release=$SHOULD_RELEASE" >> $GITHUB_OUTPUT
+          echo "release_type=$RELEASE_TYPE" >> $GITHUB_OUTPUT
+          
+          echo "🤖 Auto-release decision: $SHOULD_RELEASE"
+          if [ "$SHOULD_RELEASE" = "true" ]; then
+            echo "📋 Will auto-increment patch version"
+          else
+            echo "📋 Use manual workflow for this release"
+          fi
 
   auto-patch-release:
     needs: smart-release-check
@@ -115,267 +115,379 @@ jobs:
       pull-requests: write
 
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
-        token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: '18'
-        cache: 'npm'
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
 
-    - name: Configure Git
-      run: |
-        git config --local user.email "action@github.com"
-        git config --local user.name "GitHub Action Bot"
+      - name: Configure Git
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action Bot"
 
-    - name: Calculate next version
-      id: version
-      run: |
-        CURRENT_VERSION=$(node -p "require('./package.json').version")
-        COMMIT_MSG="${{ needs.smart-release-check.outputs.commit_message }}"
-
-        # Check if commit message contains a version number
-        VERSION_IN_COMMIT=""
-        if [[ "$COMMIT_MSG" =~ [vV]?([0-9]+)(\.[0-9]+)? ]]; then
-          VERSION_IN_COMMIT="${BASH_REMATCH[1]}"
-          if [ -n "${BASH_REMATCH[2]}" ]; then
-            VERSION_IN_COMMIT="${BASH_REMATCH[1]}${BASH_REMATCH[2]}"
+      - name: Calculate next version
+        id: version
+        run: |
+          COMMIT_MSG="${{ needs.smart-release-check.outputs.commit_message }}"
+          
+          echo "🔍 Detecting versions from all sources..."
+          
+          # Get version from package.json
+          PACKAGE_VERSION=$(node -p "require('./package.json').version")
+          echo "📦 package.json: $PACKAGE_VERSION"
+          
+          # Get version from main.js
+          MAIN_VERSION=""
+          if [ -f "main.js" ]; then
+            MAIN_VERSION=$(grep -oP '(?<=version = ["\047])[^"\047]*' main.js | head -1 || grep -oP '(?<=evoVersion = ["\047])[^"\047]*' main.js | head -1 || echo "")
+            if [ -n "$MAIN_VERSION" ]; then
+              echo "🔧 main.js: $MAIN_VERSION"
+            else
+              echo "🔧 main.js: no version found"
+            fi
           fi
-          echo "📋 Found version in commit: $VERSION_IN_COMMIT"
-        fi
-
-        # Smart version increment
-        IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT_VERSION"
-
-        if [ -n "$VERSION_IN_COMMIT" ]; then
-          if [[ "$VERSION_IN_COMMIT" =~ ^([0-9]+)\.([0-9]+)$ ]]; then
-            NEW_VERSION="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}"
+          
+          # Get version from A1Evo.html
+          HTML_VERSION=""
+          if [ -f "A1Evo.html" ]; then
+            HTML_VERSION=$(grep -oP '(?<=evoVersion = ["\047])[^"\047]*' A1Evo.html | head -1 || echo "")
+            if [ -n "$HTML_VERSION" ]; then
+              echo "🌐 A1Evo.html: $HTML_VERSION"
+            else
+              echo "🌐 A1Evo.html: no version found"
+            fi
+          fi
+          
+          # Get latest GitHub release version
+          GITHUB_VERSION=""
+          LATEST_RELEASE=$(curl -s "https://api.github.com/repos/${{ github.repository }}/releases/latest" | grep -o '"tag_name": *"[^"]*"' | cut -d'"' -f4 | sed 's/^v//' || echo "")
+          if [ -n "$LATEST_RELEASE" ] && [ "$LATEST_RELEASE" != "null" ]; then
+            GITHUB_VERSION="$LATEST_RELEASE"
+            echo "🚀 GitHub releases: $GITHUB_VERSION"
           else
-            NEW_VERSION="$VERSION_IN_COMMIT.0"
+            echo "🚀 GitHub releases: no releases found"
           fi
-          IS_MAJOR_RELEASE="true"
-        else
-          NEW_PATCH=$((PATCH + 1))
-          NEW_VERSION="$MAJOR.$MINOR.$NEW_PATCH"
-          if [ "$NEW_PATCH" = "1" ] || [ "$NEW_PATCH" = "2" ]; then
+          
+          # Function to compare versions (returns 1 if first version is greater, 0 if equal, -1 if less)
+          version_compare() {
+            local v1="$1"
+            local v2="$2"
+          
+            # Handle empty versions
+            [ -z "$v1" ] && v1="0.0.0"
+            [ -z "$v2" ] && v2="0.0.0"
+          
+            # Normalize versions to have 3 parts
+            v1=$(echo "$v1" | sed 's/^\([0-9]*\)$/\1.0.0/' | sed 's/^\([0-9]*\.[0-9]*\)$/\1.0/')
+            v2=$(echo "$v2" | sed 's/^\([0-9]*\)$/\1.0.0/' | sed 's/^\([0-9]*\.[0-9]*\)$/\1.0/')
+          
+            if [ "$v1" = "$v2" ]; then
+              echo "0"
+            else
+              # Use sort -V for version comparison
+              if [ "$(printf '%s\n%s\n' "$v1" "$v2" | sort -V | head -n1)" = "$v1" ]; then
+                echo "-1"
+              else
+                echo "1"
+              fi
+            fi
+          }
+          
+          # Find the highest version among all sources
+          CURRENT_VERSION="$PACKAGE_VERSION"
+          
+          if [ -n "$MAIN_VERSION" ] && [ "$(version_compare "$MAIN_VERSION" "$CURRENT_VERSION")" = "1" ]; then
+            CURRENT_VERSION="$MAIN_VERSION"
+          fi
+          
+          if [ -n "$HTML_VERSION" ] && [ "$(version_compare "$HTML_VERSION" "$CURRENT_VERSION")" = "1" ]; then
+            CURRENT_VERSION="$HTML_VERSION"
+          fi
+          
+          if [ -n "$GITHUB_VERSION" ] && [ "$(version_compare "$GITHUB_VERSION" "$CURRENT_VERSION")" = "1" ]; then
+            CURRENT_VERSION="$GITHUB_VERSION"
+          fi
+          
+          echo "🎯 Highest version found: $CURRENT_VERSION"
+          
+          # Check if commit message contains a version number
+          VERSION_IN_COMMIT=""
+          if [[ "$COMMIT_MSG" =~ [vV]?([0-9]+)(\.[0-9]+)?(\.[0-9]+)? ]]; then
+            VERSION_IN_COMMIT="${BASH_REMATCH[1]}"
+            if [ -n "${BASH_REMATCH[2]}" ]; then
+              VERSION_IN_COMMIT="${VERSION_IN_COMMIT}${BASH_REMATCH[2]}"
+            fi
+            if [ -n "${BASH_REMATCH[3]}" ]; then
+              VERSION_IN_COMMIT="${VERSION_IN_COMMIT}${BASH_REMATCH[3]}"
+            fi
+            echo "📋 Found version in commit: $VERSION_IN_COMMIT"
+          fi
+          
+          # Smart version increment
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT_VERSION"
+          
+          # Handle cases where version might not have all 3 parts
+          [ -z "$MAJOR" ] && MAJOR=0
+          [ -z "$MINOR" ] && MINOR=0
+          [ -z "$PATCH" ] && PATCH=0
+          
+          if [ -n "$VERSION_IN_COMMIT" ]; then
+            # Use version from commit message, but ensure it's higher than current
+            if [ "$(version_compare "$VERSION_IN_COMMIT" "$CURRENT_VERSION")" = "1" ]; then
+              NEW_VERSION="$VERSION_IN_COMMIT"
+              # Ensure it has 3 parts
+              NEW_VERSION=$(echo "$NEW_VERSION" | sed 's/^\([0-9]*\)$/\1.0.0/' | sed 's/^\([0-9]*\.[0-9]*\)$/\1.0/')
+            else
+              # Increment patch if commit version is not higher
+              NEW_PATCH=$((PATCH + 1))
+              NEW_VERSION="$MAJOR.$MINOR.$NEW_PATCH"
+            fi
             IS_MAJOR_RELEASE="true"
           else
+            NEW_PATCH=$((PATCH + 1))
+            NEW_VERSION="$MAJOR.$MINOR.$NEW_PATCH"
             IS_MAJOR_RELEASE="false"
           fi
-        fi
-
-        echo "current=$CURRENT_VERSION" >> $GITHUB_OUTPUT
-        echo "new=$NEW_VERSION" >> $GITHUB_OUTPUT
-        echo "is_major_release=$IS_MAJOR_RELEASE" >> $GITHUB_OUTPUT
-
-        echo "📈 Smart auto-increment:"
-        echo "  From: $CURRENT_VERSION"
-        echo "  To:   $NEW_VERSION"
-        if [ -n "$VERSION_IN_COMMIT" ]; then
-          echo "  Type: Version from commit message"
-        else
-          echo "  Type: Patch increment"
-        fi
-        echo "  Major release: $IS_MAJOR_RELEASE"
-
-    - name: Update versions everywhere
-      run: |
-        NEW_VERSION="${{ steps.version.outputs.new }}"
-        echo "🔄 Updating version to $NEW_VERSION in all files..."
-
-        # Update package.json
-        npm version $NEW_VERSION --no-git-tag-version
-
-        # Update main.js - multiple patterns
-        if [ -f "main.js" ]; then
-          sed -i "s/const version = ['\''\"]*[^'\''\"]*['\''\"]/const version = '$NEW_VERSION'/g" main.js
-          sed -i "s/var version = ['\''\"]*[^'\''\"]*['\''\"]/var version = '$NEW_VERSION'/g" main.js
-          sed -i "s/let version = ['\''\"]*[^'\''\"]*['\''\"]/let version = '$NEW_VERSION'/g" main.js
-          sed -i "s/version = ['\''\"]*[^'\''\"]*['\''\"]/version = '$NEW_VERSION'/g" main.js
-          sed -i "s/const evoVersion = ['\''\"]*[^'\''\"]*['\''\"]/const evoVersion = '$NEW_VERSION'/g" main.js
-          sed -i "s/var evoVersion = ['\''\"]*[^'\''\"]*['\''\"]/var evoVersion = '$NEW_VERSION'/g" main.js
-          sed -i "s/let evoVersion = ['\''\"]*[^'\''\"]*['\''\"]/let evoVersion = '$NEW_VERSION'/g" main.js
-          sed -i "s/evoVersion = ['\''\"]*[^'\''\"]*['\''\"]/evoVersion = '$NEW_VERSION'/g" main.js
-          echo "✅ Updated main.js"
-        fi
-
-        # Update A1Evo.html
-        if [ -f "A1Evo.html" ]; then
-          sed -i "s/evoVersion = ['\''\"]*[^'\''\"]*['\''\"]/evoVersion = '$NEW_VERSION'/g" A1Evo.html
-          sed -i "s/const evoVersion = ['\''\"]*[^'\''\"]*['\''\"]/const evoVersion = '$NEW_VERSION'/g" A1Evo.html
-          sed -i "s/var evoVersion = ['\''\"]*[^'\''\"]*['\''\"]/var evoVersion = '$NEW_VERSION'/g" A1Evo.html
-          echo "✅ Updated A1Evo.html"
-        fi
-
-        # Update webWorker.js if it exists
-        if [ -f "webWorker.js" ]; then
-          sed -i "s/version = ['\''\"]*[^'\''\"]*['\''\"]/version = '$NEW_VERSION'/g" webWorker.js
-          echo "✅ Updated webWorker.js"
-        fi
-
-    - name: Generate smart release notes
-      run: |
-        NEW_VERSION="${{ steps.version.outputs.new }}"
-        CURRENT_VERSION="${{ steps.version.outputs.current }}"
-        COMMIT_MSG="${{ needs.smart-release-check.outputs.commit_message }}"
-        TARGET_COMMIT=$(git rev-parse HEAD)
-
-        # Release type detection
-        RELEASE_TYPE="patch"
-        TYPE_EMOJI="🐛"
-
-        # Detect if we have a meaningful commit message vs generic upload
-        IS_GENERIC_UPLOAD="false"
-        if [[ "$COMMIT_MSG" == "Add files via upload" ]] || \
-           [[ "$COMMIT_MSG" =~ ^Add\ files\ via\ upload$ ]] || \
-           [[ "$COMMIT_MSG" =~ ^Update\ .+\.(js|html)$ ]]; then
-          IS_GENERIC_UPLOAD="true"
-        fi
-
-        {
-          echo "## $TYPE_EMOJI A1 Evo Acoustica v$NEW_VERSION"
-          echo ""
-
-          if [ "$IS_GENERIC_UPLOAD" = "true" ]; then
-            echo "### 🔄 Automatic Update"
-            echo "Files were updated and automatically released as patch version."
-            echo ""
-            echo "**Modified Files**: $(git diff --name-only HEAD~1 HEAD | tr '\n' ', ' | sed 's/,$//')"
-            echo ""
+          
+          echo "current=$CURRENT_VERSION" >> $GITHUB_OUTPUT
+          echo "new=$NEW_VERSION" >> $GITHUB_OUTPUT
+          echo "is_major_release=$IS_MAJOR_RELEASE" >> $GITHUB_OUTPUT
+          echo "package_version=$PACKAGE_VERSION" >> $GITHUB_OUTPUT
+          echo "main_version=$MAIN_VERSION" >> $GITHUB_OUTPUT
+          echo "html_version=$HTML_VERSION" >> $GITHUB_OUTPUT
+          echo "github_version=$GITHUB_VERSION" >> $GITHUB_OUTPUT
+          
+          echo "📈 Smart version synchronization:"
+          echo "  Sources found:"
+          echo "    - package.json: $PACKAGE_VERSION"
+          echo "    - main.js: ${MAIN_VERSION:-'not found'}"
+          echo "    - A1Evo.html: ${HTML_VERSION:-'not found'}"
+          echo "    - GitHub releases: ${GITHUB_VERSION:-'not found'}"
+          echo "  Baseline (highest): $CURRENT_VERSION"
+          echo "  New version: $NEW_VERSION"
+          if [ -n "$VERSION_IN_COMMIT" ]; then
+            echo "  Type: Version from commit message"
           else
-            echo "### ✨ What's New"
-            echo "**$COMMIT_MSG**"
-            echo ""
-            echo "This release was automatically created based on the above changes."
-            echo ""
+            echo "  Type: Patch increment"
           fi
+          echo "  Major release: $IS_MAJOR_RELEASE"
 
-          # Get other changes and filter out generic ones
-          OTHER_CHANGES=$(git log v$CURRENT_VERSION..HEAD --pretty=format:"- %s" --no-merges 2>/dev/null | grep -v "Add files via upload" | grep -v "Update " | grep -v "Create " | head -10 || git log --pretty=format:"- %s" --no-merges -5 | grep -v "Add files via upload" | grep -v "Update " | grep -v "Create ")
-
-          # Only show other changes section if there are meaningful changes
-          if [ -n "$OTHER_CHANGES" ]; then
-            echo "### 🔄 Recent Changes Since $CURRENT_VERSION"
-            echo "$OTHER_CHANGES"
-            echo ""
+      - name: Update versions everywhere
+        run: |
+          NEW_VERSION="${{ steps.version.outputs.new }}"
+          echo "🔄 Synchronizing version to $NEW_VERSION in all files..."
+          
+          # Always update package.json to the new version
+          npm version $NEW_VERSION --no-git-tag-version
+          echo "✅ Updated package.json: ${{ steps.version.outputs.package_version }} → $NEW_VERSION"
+          
+          # Update main.js - multiple patterns
+          if [ -f "main.js" ]; then
+            sed -i "s/const version = ['\''\"]*[^'\''\"]*['\''\"]/const version = '$NEW_VERSION'/g" main.js
+            sed -i "s/var version = ['\''\"]*[^'\''\"]*['\''\"]/var version = '$NEW_VERSION'/g" main.js
+            sed -i "s/let version = ['\''\"]*[^'\''\"]*['\''\"]/let version = '$NEW_VERSION'/g" main.js
+            sed -i "s/version = ['\''\"]*[^'\''\"]*['\''\"]/version = '$NEW_VERSION'/g" main.js
+            sed -i "s/const evoVersion = ['\''\"]*[^'\''\"]*['\''\"]/const evoVersion = '$NEW_VERSION'/g" main.js
+            sed -i "s/var evoVersion = ['\''\"]*[^'\''\"]*['\''\"]/var evoVersion = '$NEW_VERSION'/g" main.js
+            sed -i "s/let evoVersion = ['\''\"]*[^'\''\"]*['\''\"]/let evoVersion = '$NEW_VERSION'/g" main.js
+            sed -i "s/evoVersion = ['\''\"]*[^'\''\"]*['\''\"]/evoVersion = '$NEW_VERSION'/g" main.js
+            echo "✅ Updated main.js: ${{ steps.version.outputs.main_version }} → $NEW_VERSION"
           fi
-
-          # Get modified files
-          MODIFIED_FILES=$(git diff --name-only HEAD~1 HEAD | sed 's/^/- /' | head -15)
-
-          # Only show modified files if there are any
-          if [ -n "$MODIFIED_FILES" ]; then
-            echo "### 📁 Modified Files"
-            echo "$MODIFIED_FILES"
-            echo ""
+          
+          # Update A1Evo.html
+          if [ -f "A1Evo.html" ]; then
+            sed -i "s/evoVersion = ['\''\"]*[^'\''\"]*['\''\"]/evoVersion = '$NEW_VERSION'/g" A1Evo.html
+            sed -i "s/const evoVersion = ['\''\"]*[^'\''\"]*['\''\"]/const evoVersion = '$NEW_VERSION'/g" A1Evo.html
+            sed -i "s/var evoVersion = ['\''\"]*[^'\''\"]*['\''\"]/var evoVersion = '$NEW_VERSION'/g" A1Evo.html
+            echo "✅ Updated A1Evo.html: ${{ steps.version.outputs.html_version }} → $NEW_VERSION"
           fi
+          
+          # Update webWorker.js if it exists
+          if [ -f "webWorker.js" ]; then
+            sed -i "s/version = ['\''\"]*[^'\''\"]*['\''\"]/version = '$NEW_VERSION'/g" webWorker.js
+            echo "✅ Updated webWorker.js"
+          fi
+          
+          echo "🎯 All files synchronized to version $NEW_VERSION"
 
-          echo "### 📦 Cross-Platform Downloads"
-          echo "- **🐧 Linux**: \`a1-evo-acoustica-linux\`"
-          echo "- **🍎 macOS (Intel)**: \`a1-evo-acoustica-macos-x64\`"
-          echo "- **🍎 macOS (Apple Silicon)**: \`a1-evo-acoustica-macos-arm64\`"
-          echo "- **🪟 Windows**: \`a1-evo-acoustica-win-x64.exe\`"
-          echo ""
+      - name: Generate smart release notes
+        run: |
+          NEW_VERSION="${{ steps.version.outputs.new }}"
+          CURRENT_VERSION="${{ steps.version.outputs.current }}"
+          COMMIT_MSG="${{ needs.smart-release-check.outputs.commit_message }}"
+          TARGET_COMMIT=$(git rev-parse HEAD)
+          
+          # Release type detection
+          RELEASE_TYPE="patch"
+          TYPE_EMOJI="🐛"
+          
+          # Detect if we have a meaningful commit message vs generic upload
+          IS_GENERIC_UPLOAD="false"
+          if [[ "$COMMIT_MSG" == "Add files via upload" ]] || \
+             [[ "$COMMIT_MSG" =~ ^Add\ files\ via\ upload$ ]] || \
+             [[ "$COMMIT_MSG" =~ ^Update\ .+\.(js|html)$ ]]; then
+            IS_GENERIC_UPLOAD="true"
+          fi
+          
+          {
+            echo "## $TYPE_EMOJI A1 Evo Acoustica v$NEW_VERSION"
+            echo ""
+          
+            if [ "$IS_GENERIC_UPLOAD" = "true" ]; then
+              echo "### 🔄 Automatic Update"
+              echo "Files were updated and automatically released as patch version."
+              echo ""
+              echo "**Modified Files**: $(git diff --name-only HEAD~1 HEAD | tr '\n' ', ' | sed 's/,$//')"
+              echo ""
+            else
+              echo "### ✨ What's New"
+              echo "**$COMMIT_MSG**"
+              echo ""
+              echo "This release was automatically created based on the above changes."
+              echo ""
+            fi
+          
+            # Get other changes and filter out generic ones
+            OTHER_CHANGES=$(git log v$CURRENT_VERSION..HEAD --pretty=format:"- %s" --no-merges 2>/dev/null | grep -v "Add files via upload" | grep -v "Update " | grep -v "Create " | head -10 || git log --pretty=format:"- %s" --no-merges -5 | grep -v "Add files via upload" | grep -v "Update " | grep -v "Create ")
+          
+            # Only show other changes section if there are meaningful changes
+            if [ -n "$OTHER_CHANGES" ]; then
+              echo "### 🔄 Recent Changes Since $CURRENT_VERSION"
+              echo "$OTHER_CHANGES"
+              echo ""
+            fi
+          
+            # Get modified files
+            MODIFIED_FILES=$(git diff --name-only HEAD~1 HEAD | sed 's/^/- /' | head -15)
+          
+            # Only show modified files if there are any
+            if [ -n "$MODIFIED_FILES" ]; then
+              echo "### 📁 Modified Files"
+              echo "$MODIFIED_FILES"
+              echo ""
+            fi
+          
+            echo "### 📦 Cross-Platform Downloads"
+            echo "- **🐧 Linux**: \`a1-evo-acoustica-linux\`"
+            echo "- **🍎 macOS (Intel)**: \`a1-evo-acoustica-macos-x64\`"
+            echo "- **🍎 macOS (Apple Silicon)**: \`a1-evo-acoustica-macos-arm64\`"
+            echo "- **🪟 Windows**: \`a1-evo-acoustica-win-x64.exe\`"
+            echo ""
+          
+            echo "### 📊 Release Information"
+            echo "- **Type**: $RELEASE_TYPE release"
+            echo "- **Triggered**: Automatic release on push to main"
+            echo "- **Build Platforms**: all"
+            echo "- **Source**: Latest commit $TARGET_COMMIT"
+            echo ""
+          
+            echo "### 🚀 Next Steps"
+            echo "- For custom release notes, use the **\"Manual Release with Custom Version\"** workflow"
+            echo "- To skip auto-releases, add \`[skip-release]\` to commit messages"
+            echo "- For major versions, trigger manual releases"
+            echo ""
+            echo "---"
+            echo "*Automatic release • [Auto-Release Workflow](../../actions/workflows/release.yml) • [Manual Release Workflow](../../actions/workflows/manual-release.yml)*"
+          } > release_notes.md
 
-          echo "### 📊 Release Information"
-          echo "- **Type**: $RELEASE_TYPE release"
-          echo "- **Triggered**: Automatic release on push to main"
-          echo "- **Build Platforms**: all"
-          echo "- **Source**: Latest commit $TARGET_COMMIT"
-          echo ""
-
-          echo "### 🚀 Next Steps"
-          echo "- For custom release notes, use the **\"Manual Release with Custom Version\"** workflow"
-          echo "- To skip auto-releases, add \`[skip-release]\` to commit messages"
-          echo "- For major versions, trigger manual releases"
-          echo ""
-          echo "---"
-          echo "*Automatic release • [Auto-Release Workflow](../../actions/workflows/release.yml) • [Manual Release Workflow](../../actions/workflows/manual-release.yml)*"
-        } > release_notes.md
-
-    - name: Build and package
-      run: |
-        echo "📦 Installing dependencies..."
-        npm ci
-
-        echo "🔨 Building v${{ steps.version.outputs.new }} executables..."
-        npm run build
-
-        # Create organized distribution
-        mkdir -p dist
-        BUILD_SUCCESS=true
-
-        for file in a1-evo-acoustica-*; do
-          if [ -f "$file" ]; then
-            echo "📦 Packaging: $file"
-            mv "$file" "dist/"
+      - name: Build and package
+        run: |
+          echo "📦 Installing dependencies..."
+          npm ci
+          
+          echo "🔨 Building v${{ steps.version.outputs.new }} executables..."
+          npm run build
+          
+          # Create organized distribution
+          mkdir -p dist
+          BUILD_SUCCESS=true
+          
+          for file in a1-evo-acoustica-*; do
+            if [ -f "$file" ]; then
+              echo "📦 Packaging: $file"
+              mv "$file" "dist/"
+            else
+              echo "⚠️ Expected executable not found: $file"
+              BUILD_SUCCESS=false
+            fi
+          done
+          
+          if [ "$BUILD_SUCCESS" = "true" ]; then
+            echo "✅ All executables built successfully"
+            ls -la dist/
           else
-            echo "⚠️ Expected executable not found: $file"
-            BUILD_SUCCESS=false
+            echo "❌ Some builds failed"
+            exit 1
           fi
-        done
 
-        if [ "$BUILD_SUCCESS" = "true" ]; then
-          echo "✅ All executables built successfully"
-          ls -la dist/
-        else
-          echo "❌ Some builds failed"
-          exit 1
-        fi
+      - name: Commit and tag
+        run: |
+          NEW_VERSION="${{ steps.version.outputs.new }}"
+          
+          # Stage all version changes
+          git add package.json package-lock.json
+          [ -f "main.js" ] && git add main.js
+          [ -f "A1Evo.html" ] && git add A1Evo.html
+          [ -f "webWorker.js" ] && git add webWorker.js
+          
+          # Commit if there are changes
+          if ! git diff --staged --quiet; then
+            git commit -m "🤖 Auto-release v$NEW_VERSION - Automatically incremented patch version from trigger: ${{ needs.smart-release-check.outputs.commit_message }} | Previous: ${{ steps.version.outputs.current }} → Current: $NEW_VERSION [skip-release]"
+            git push origin main
+            echo "✅ Committed version changes"
+          fi
+          
+          # Create tag with error checking
+          if git tag -a "v$NEW_VERSION" -m "🤖 Auto-release v$NEW_VERSION - Automated patch release triggered by file updates. Built executables for all supported platforms."; then
+            echo "✅ Created tag v$NEW_VERSION"
+          else
+            echo "❌ Failed to create tag v$NEW_VERSION"
+            exit 1
+          fi
+          
+          # Verify tag exists before pushing
+          if git rev-parse "v$NEW_VERSION" >/dev/null 2>&1; then
+            git push origin "v$NEW_VERSION"
+            echo "✅ Pushed tag v$NEW_VERSION"
+          else
+            echo "❌ Tag v$NEW_VERSION does not exist"
+            exit 1
+          fi
 
-    - name: Commit and tag
-      run: |
-        NEW_VERSION="${{ steps.version.outputs.new }}"
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ steps.version.outputs.new }}
+          name: A1 Evo Acoustica v${{ steps.version.outputs.new }}
+          body_path: release_notes.md
+          files: |
+            dist/*
+          prerelease: false
+          draft: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-        # Stage all version changes
-        git add package.json package-lock.json
-        [ -f "main.js" ] && git add main.js
-        [ -f "A1Evo.html" ] && git add A1Evo.html
-        [ -f "webWorker.js" ] && git add webWorker.js
-
-        # Commit if there are changes
-        if ! git diff --staged --quiet; then
-          git commit -m "🤖 Auto-release v$NEW_VERSION - Automatically incremented patch version from trigger: ${{ needs.smart-release-check.outputs.commit_message }} | Previous: ${{ steps.version.outputs.current }} → Current: $NEW_VERSION [skip-release]"
-          git push origin main
-          echo "✅ Committed version changes"
-        fi
-
-        # Create and push tag
-        git tag -a "v$NEW_VERSION" -m "🤖 Auto-release v$NEW_VERSION - Automated patch release triggered by file updates. Built executables for all supported platforms."
-        git push origin "v$NEW_VERSION"
-        echo "✅ Tagged v$NEW_VERSION"
-
-    - name: Create GitHub Release
-      uses: softprops/action-gh-release@v1
-      with:
-        tag_name: v${{ steps.version.outputs.new }}
-        name: A1 Evo Acoustica v${{ steps.version.outputs.new }}
-        body_path: release_notes.md
-        files: |
-          dist/*
-        prerelease: false
-        draft: false
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-    - name: Success summary
-      run: |
-        NEW_VERSION="${{ steps.version.outputs.new }}"
-        echo "🎉 Auto-release v$NEW_VERSION completed!"
-        echo ""
-        echo "📊 Release Summary:"
-        echo "├─ Trigger: ${{ needs.smart-release-check.outputs.commit_message }}"
-        echo "├─ Version: ${{ steps.version.outputs.current }} → $NEW_VERSION"
-        echo "├─ Type: Automatic patch increment"
-        echo "├─ Is Major Release: ${{ steps.version.outputs.is_major_release }}"
-        echo "├─ Executables: ✅ Built for all platforms"
-        echo "└─ Release: https://github.com/${{ github.repository }}/releases/tag/v$NEW_VERSION"
-        echo ""
-        echo "💡 Pro Tips:"
-        echo "• Add '[skip-release]' to commit messages to prevent auto-releases"
-        echo "• Use manual workflow for major versions or custom release notes"
-        echo "• Next suggested versions: $NEW_VERSION → $(echo $NEW_VERSION | awk -F. '{print $1"."$2"."($3+1)}')"
+      - name: Success summary
+        run: |
+          NEW_VERSION="${{ steps.version.outputs.new }}"
+          echo "🎉 Auto-release v$NEW_VERSION completed!"
+          echo ""
+          echo "📊 Release Summary:"
+          echo "├─ Trigger: ${{ needs.smart-release-check.outputs.commit_message }}"
+          echo "├─ Version: ${{ steps.version.outputs.current }} → $NEW_VERSION"
+          echo "├─ Type: Automatic patch increment"
+          echo "├─ Is Major Release: ${{ steps.version.outputs.is_major_release }}"
+          echo "├─ Executables: ✅ Built for all platforms"
+          echo "└─ Release: https://github.com/${{ github.repository }}/releases/tag/v$NEW_VERSION"
+          echo ""
+          echo "💡 Pro Tips:"
+          echo "• Add '[skip-release]' to commit messages to prevent auto-releases"
+          echo "• Use manual workflow for major versions or custom release notes"
+          echo "• Next suggested versions: $NEW_VERSION → $(echo $NEW_VERSION | awk -F. '{print $1"."$2"."($3+1)}')"

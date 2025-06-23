@@ -3,8 +3,7 @@
 Copyright (c) 2025 OCA (https://www.youtube.com/@OCAudiophile)
 All rights reserved.
 
-This software is free to use and is licensed un
-der the following terms:
+This software is free to use and is licensed under the following terms:
 
 Permission is granted to:
 
@@ -315,7 +314,7 @@ and noninfringement. Use at your own risk.
     align-items: center;
     font-size: 1rem;
     color: #CBD5E0;
-    max-width: 600px;
+    max-width: 900px;
   }
   .toggle-label {
     display: flex;
@@ -784,28 +783,18 @@ and noninfringement. Use at your own risk.
   </div>
   </div>
   </div>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
   <div class="option-container" style="display: flex; flex-direction: row; gap: 0.5px;">
   <div class="tooltip-container">
   <label class="checkbox-label">
   <input type="checkbox" id="disableSpeakerInversion">Fix speaker polarities
   </label>
   <div class="tooltip">Check polarities and invert out of phase speakers</div>
+  </div>
+  <div class="tooltip-container">
+  <label class="checkbox-label">
+  <input type="checkbox" id="noSubInv">Avoid sub inversion
+  </label>
+  <div class="tooltip">Do not invert default subwoofer polarities during optimization</div>
   </div>
   <div class="tooltip-container">
   <label class="checkbox-label">
@@ -869,7 +858,7 @@ let nSpeakers = null, nSubs = null, subMinTrim = -12, subMaxTrim = 12, lpf4LFE, 
 let customLevel = [], commandId = [], customDistance = [], customInvert = [], customCrossover = [], customFilter = [], deqFilter = [], subTrim = [], customMinFreq = [], customMaxFreq = [], customMinFreqFR = [], customMaxFreqFR = [], customMinFreqC = [], customMaxFreqC = [], customMinFreqA = [], customMaxFreqA = [], customMargin = [], subAllPassQ = null, allpassQ = [], hiPass, hType;
 const defaultSlope = "L-R4";
 const dbValues = [-12, -15, -18, -20, -25];
-var subBoost = 0, bassFill = 0, levelLowVol = 2, enableInversion = false, addCenter = false, forceLarge = false, noAllpass = false, minFreq = 40, maxFreq = 250, minFreqFR = 40, maxFreqFR = 250, minFreqC = 40, maxFreqC = 250,  minFreqA = 40, maxFreqA = 250, subRolloffEnabled = false, subRolloffFreq = null, subRolloffSlope = defaultSlope, lpf4lfeValue = null;
+var subBoost = 0, bassFill = 0, levelLowVol = 2, enableInversion = false, addCenter = false, invertSub = false, forceLarge = false, noAllpass = false, minFreq = 40, maxFreq = 250, minFreqFR = 40, maxFreqFR = 250, minFreqC = 40, maxFreqC = 250,  minFreqA = 40, maxFreqA = 250, subRolloffEnabled = false, subRolloffFreq = null, subRolloffSlope = defaultSlope, lpf4lfeValue = null;
 
 function toggleExpertDrawer() {
   const drawer = document.getElementById('expertDrawer');
@@ -1498,14 +1487,15 @@ async function main(){
   measurementChoice.classList.add('transitioned');
   const startTime = performance.now();
   console.infoBold(`** Customizations start **`);
-  const defaults = {subBoost: 0, bassFill: 0, levelLowVol: 2, enableInversion: false, addCenter: false, forceLarge: false, noAllpass: false, minFreq: 40, maxFreq: 250, minFreqFR: 40, maxFreqFR: 250, minFreqC: 40, maxFreqC: 250, minFreqA: 40, maxFreqA: 250};
-  const customizations = {subBoost, bassFill, levelLowVol, enableInversion, addCenter, forceLarge, noAllpass, minFreqFR, maxFreqFR, minFreqC, maxFreqC,  minFreq, maxFreq, minFreqA, maxFreqA};
+  const defaults = {subBoost: 0, bassFill: 0, levelLowVol: 2, enableInversion: false, addCenter: false, invertSub: false, forceLarge: false, noAllpass: false, minFreq: 40, maxFreq: 250, minFreqFR: 40, maxFreqFR: 250, minFreqC: 40, maxFreqC: 250, minFreqA: 40, maxFreqA: 250};
+  const customizations = {subBoost, bassFill, levelLowVol, enableInversion, addCenter, invertSub, forceLarge, noAllpass, minFreqFR, maxFreqFR, minFreqC, maxFreqC,  minFreq, maxFreq, minFreqA, maxFreqA};
   const descriptions = {
     subBoost: `Subwoofer EQ filters maximum allowed boost (dB): `,
     bassFill: `Subwoofer target curve infill value (dB): `,
     levelLowVol: `Low volume listening level offset (dB): `,
     enableInversion: `Out of phase 'Speaker' detection and automatic inversion? `,
     addCenter: 'Center speaker prioritized in subwoofer alignment? ',
+    invertSub: 'Subwoofer inversion disabled? ',
     forceLarge: `Double bass mode ('LFE + Main') activated? `,
     noAllpass: `Allpass filters enabled? `,
     minFreqFR: `Minimum searchable crossover frequency - Front mains: `,
@@ -2475,7 +2465,6 @@ async function sortBass() {
          fixedOverallAnalysisStartFreq: fixedOverallAnalysisStartFreq,
          lpCutoffCandidates: lpCutoffCandidates_main_thread,
          hpSearchStep: hpSearchStep,
-         // ADD THESE TWO LINES:
          hpCandidateMinFreq: HP_CANDIDATE_MIN_FREQ,          
          hpCandidateMaxFreq: determinedHpCandidateMaxFreq    
        }, [workerFrequencies.buffer, workerSubMagnitude.buffer, workerTargetMagnitude.buffer]);
@@ -2594,7 +2583,7 @@ async function alignFronts() {
   const msNeg = (hardNegative ?? -20) / 1000, msPos = (hardPositive ?? 20) / 1000;
   const delayStep = 0.00003333333333333333, delayValues = [];
   for (let ts = msNeg; ts <= msPos; ts += delayStep) delayValues.push(ts);
-  const inversionConfigs = [{subInverted: false}, {subInverted: true}];
+  const inversionConfigs = invertSub ? [{subInverted: false}] : [{subInverted: false}, {subInverted: true}];
   let apfQValues = [0, 0.5773502692, 0.7071067812, 1.0, 1.414213562];
   if (!noAllpass) apfQValues = [0];
   console.info(`Brute force searching optimal ${speakerSet} + Sub configuration...`);
@@ -3333,7 +3322,8 @@ async function optimizeSubs(i1, i2, timeShiftMinMs, timeShiftMaxMs, fMax) {
   const numTimeSteps = Math.floor((timeShiftParams.max - timeShiftParams.min) / timeShiftParams.step) + 1;
   let bestConfig = {sumPower: -Infinity};
   const dataLength = dataIndices.length;
-  for (let inversion = 0; inversion < 2; inversion++) {
+  const maxInversion = invertSub ? 1 : 2;
+  for (let inversion = 0; inversion < maxInversion; inversion++) {
     const phaseOffset = inversion === 1 ? Math.PI : 0;
     let bestForInversion = {sumPower: -Infinity, timeShift: 0};
     for (let i = 0; i < numTimeSteps; i++) {
@@ -3719,6 +3709,7 @@ document.addEventListener('DOMContentLoaded', () => {
   UpdateMaxFreqA(maxFreqA, true);
   UpdateenableInversion(enableInversion, false);
   UpdateaddCenter(addCenter, false);
+  UpdateSubInv(invertSub, false);
   UpdateisWeakBass(forceLarge, false);
   UpdateAllPass(noAllpass, false);
   document.getElementById('bassFillSlider').addEventListener('input', function (e) {
@@ -3777,6 +3768,9 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   document.getElementById('prioCenter').addEventListener('change', function (event) {
     UpdateaddCenter(event.target.checked, false);
+  });
+  document.getElementById('noSubInv').addEventListener('change', function (event) {
+    UpdateSubInv(event.target.checked, false);
   });
   document.getElementById('weakBass').addEventListener('change', function (event) {
     UpdateisWeakBass(event.target.checked, false);
@@ -4167,6 +4161,14 @@ addCenter = centerAdd;
 if (syncToggle) {
   document.getElementById('prioCenter').checked = centerAdd;
 }}
+
+noSubInv
+function UpdateSubInv(invSub, syncToggle) {
+invertSub = invSub;
+if (syncToggle) {
+  document.getElementById('noSubInv').checked = invSub;
+}}
+
 async function updateAPI(endpoint, bodyValue) {
   const url = `http://localhost:4735/application/${endpoint}`;
   await fetch(url, {

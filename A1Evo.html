@@ -804,6 +804,12 @@ and noninfringement. Use at your own risk.
   </div>
   <div class="tooltip-container">
   <label class="checkbox-label">
+  <input type="checkbox" id="enhanceDialog">Enhance dialogue clarity
+  </label>
+  <div class="tooltip">Increase dialog clarity on center channel</div>
+  </div>
+  <div class="tooltip-container">
+  <label class="checkbox-label">
   <input type="checkbox" id="disableAllPass">Enable allpass filters
   </label>
   <div class="tooltip">Evaluate and add allpass filters to minimize dips below target curve</div>
@@ -858,7 +864,7 @@ let nSpeakers = null, nSubs = null, subMinTrim = -12, subMaxTrim = 12, lpf4LFE, 
 let customLevel = [], commandId = [], customDistance = [], customInvert = [], customCrossover = [], customFilter = [], deqFilter = [], subTrim = [], customMinFreq = [], customMaxFreq = [], customMinFreqFR = [], customMaxFreqFR = [], customMinFreqC = [], customMaxFreqC = [], customMinFreqA = [], customMaxFreqA = [], customMargin = [], subAllPassQ = null, allpassQ = [], hiPass, hType;
 const defaultSlope = "L-R4";
 const dbValues = [-12, -15, -18, -20, -25];
-var subBoost = 0, bassFill = 0, levelLowVol = 2, enableInversion = false, addCenter = false, invertSub = false, forceLarge = false, noAllpass = false, minFreq = 40, maxFreq = 250, minFreqFR = 40, maxFreqFR = 250, minFreqC = 40, maxFreqC = 250,  minFreqA = 40, maxFreqA = 250, subRolloffEnabled = false, subRolloffFreq = null, subRolloffSlope = defaultSlope, lpf4lfeValue = null;
+var subBoost = 0, bassFill = 0, levelLowVol = 2, enableInversion = false, addCenter = false, invertSub = false, forceLarge = false, noAllpass = false, dialogEn = false, minFreq = 40, maxFreq = 250, minFreqFR = 40, maxFreqFR = 250, minFreqC = 40, maxFreqC = 250,  minFreqA = 40, maxFreqA = 250, subRolloffEnabled = false, subRolloffFreq = null, subRolloffSlope = defaultSlope, lpf4lfeValue = null;
 
 function toggleExpertDrawer() {
   const drawer = document.getElementById('expertDrawer');
@@ -1487,8 +1493,8 @@ async function main(){
   measurementChoice.classList.add('transitioned');
   const startTime = performance.now();
   console.infoBold(`** Customizations start **`);
-  const defaults = {subBoost: 0, bassFill: 0, levelLowVol: 2, enableInversion: false, addCenter: false, invertSub: false, forceLarge: false, noAllpass: false, minFreq: 40, maxFreq: 250, minFreqFR: 40, maxFreqFR: 250, minFreqC: 40, maxFreqC: 250, minFreqA: 40, maxFreqA: 250};
-  const customizations = {subBoost, bassFill, levelLowVol, enableInversion, addCenter, invertSub, forceLarge, noAllpass, minFreqFR, maxFreqFR, minFreqC, maxFreqC,  minFreq, maxFreq, minFreqA, maxFreqA};
+  const defaults = {subBoost: 0, bassFill: 0, levelLowVol: 2, enableInversion: false, addCenter: false, invertSub: false, forceLarge: false, noAllpass: false, dialogEn: false, minFreq: 40, maxFreq: 250, minFreqFR: 40, maxFreqFR: 250, minFreqC: 40, maxFreqC: 250, minFreqA: 40, maxFreqA: 250};
+  const customizations = {subBoost, bassFill, levelLowVol, enableInversion, addCenter, invertSub, forceLarge, noAllpass, dialogEn, minFreqFR, maxFreqFR, minFreqC, maxFreqC,  minFreq, maxFreq, minFreqA, maxFreqA};
   const descriptions = {
     subBoost: `Subwoofer EQ filters maximum allowed boost (dB): `,
     bassFill: `Subwoofer target curve infill value (dB): `,
@@ -1498,6 +1504,7 @@ async function main(){
     invertSub: 'Subwoofer inversion disabled? ',
     forceLarge: `Double bass mode ('LFE + Main') activated? `,
     noAllpass: `Allpass filters enabled? `,
+    dialogEn: `Dialogue enhancement enabled? `,
     minFreqFR: `Minimum searchable crossover frequency - Front mains: `,
     maxFreqFR: `Maximum searchable crossover frequency - Front mains: `,
 	  minFreqC: `Minimum searchable crossover frequency - Center speaker: `,
@@ -2720,7 +2727,7 @@ async function alignFronts() {
       if (customDistance[i] > maxDist) maxDist = customDistance[i];
       console.log(`${commandId[i]}: ${customDistance[i].toFixed(2)}m (${(customDistance[i] * 3.28084).toFixed(2)}ft)`);
     }
-    if ((maxDist - minDist) > 6) console.warn(`A1 Evo used 'extended' maximum speaker distance difference limit in your optimized set up (6m vs 7.35m). DO NOT view or edit distance settings in the receiver's setup menu as it may reset them back to defaults, disrupting calibration - you may check them using the WEB UI!`);
+    if ((maxDist - minDist) > 6) console.warn(`A1 Evo assigned 'extended' maximum speaker distance difference limit in your calibration (6m vs 7.35m). DO NOT view or edit distance settings in the receiver's setup menu as it may reset them back to defaults, disrupting calibration - you may check them using the WEB UI!`);
     if (customInvert[nSpeakers + 1]) await postSafe(`${baseUrl}/${nSpeakers + 1}/command`, { command: "Invert" }, "Invert completed");
   } else {
     console.error(`Failed to find optimal configuration for ${speakerSet} speakers.`);
@@ -3075,6 +3082,50 @@ async function refFilter(index, orgIndex) {
   await new Promise(resolve => setTimeout(resolve, speedDelay / 4));
   await postNext('Minimum phase version', mpIndex + 5, {'include cal': true, 'append lf tail': false, 'append hf tail': false, 'frequency warping': false, 'replicate data': true});
   await new Promise(resolve => setTimeout(resolve, speedDelay / 4));
+  if (dialogEn && orgIndex === 3 && commandId[3] != "C") console.warn(`Dialogue enhancement will only work in the presence of a Center speaker. Option disengaged!`);
+  if (dialogEn && orgIndex === 3 && commandId[3] === "C") {
+     const cFilters = [{
+    "index": 1,
+    "type": "PK",
+    "enabled": true,
+    "isAuto": true,
+    "frequency": 120,
+    "gaindB": 2,
+    "q": 15}, {
+    "index": 2,
+    "type": "PK",
+    "enabled": true,
+    "isAuto": true,
+    "frequency": 240,
+    "gaindB": 3,
+    "q": 15}, {
+    "index": 3,
+    "type": "PK",
+    "enabled": true,
+    "isAuto": true,
+    "frequency": 2500,
+    "gaindB": 6,
+    "q": 5}, {
+    "index": 4,
+    "type": "PK",
+    "enabled": true,
+    "isAuto": true,
+    "frequency": 5000,
+    "gaindB": 3,
+    "q": 5}, {
+    "index": 5,
+    "type": "PK",
+    "enabled": true,
+    "isAuto": true,
+    "frequency": 50,
+    "gaindB": -3,
+    "q": 5}];
+    await postSafe(`${baseUrl}/${mpIndex + 6}/filters`, {filters: cFilters}, 'Filters set');
+    await new Promise(resolve => setTimeout(resolve, speedDelay / 4));
+    await postNext('Generate predicted measurement', mpIndex + 6);
+    await new Promise(resolve => setTimeout(resolve, speedDelay / 4));
+    await postDelete(mpIndex + 6);
+  }
   if (allpassQ[orgIndex] != null && allpassQ[orgIndex] != 0) {
     await postSafe(`${baseUrl}/${mpIndex + 6}/filters`, {filters: [{index: 1, enabled: true, isAuto: false, frequency: customCrossover[orgIndex], q: allpassQ[orgIndex], type: 'All pass'}]}, 'Filters set');
     await new Promise(resolve => setTimeout(resolve, speedDelay / 4));
@@ -3593,8 +3644,8 @@ async function generateOCA() {
     baseOca.lpfForLFE = lpf4LFE;
     baseOca.bassMode = bassModer
     let ocafileName;
-    !subRolloffEnabled ? ocafileName = `${timestamp}_${tcName}_swFill${bassFill}_eqBoost${subBoost}_lowVolOffset${dbValues[levelLowVol]}_bassMode${bassModer}_AP${noAllpass}_CB${addCenter}_Acoustica_v${evoVersion}.oca` :
-    ocafileName = `${timestamp}_${tcName}_swFill${bassFill}_eqBoost${subBoost}_swRoll${subRolloffFreq}_${subRolloffSlope}_lowVolOffset${dbValues[levelLowVol]}_bassMode${bassModer}_AP${noAllpass}_CB${addCenter}_Acoustica_v${evoVersion}.oca`;
+    !subRolloffEnabled ? ocafileName = `${timestamp}_${tcName}_swFill${bassFill}_eqBoost${subBoost}_lowVolOffset${dbValues[levelLowVol]}_bassMode${bassModer}_AP${noAllpass}_DE${dialogEn}_CB${addCenter}_Acoustica_v${evoVersion}.oca` :
+    ocafileName = `${timestamp}_${tcName}_swFill${bassFill}_eqBoost${subBoost}_swRoll${subRolloffFreq}_${subRolloffSlope}_lowVolOffset${dbValues[levelLowVol]}_bassMode${bassModer}_AP${noAllpass}_DE${dialogEn}_CB${addCenter}_Acoustica_v${evoVersion}.oca`;
     ocafileName = ocafileName
       .replace(/\s+/g, '_')
       .replace(/[^\w.-]/g, '_')
@@ -3712,6 +3763,7 @@ document.addEventListener('DOMContentLoaded', () => {
   UpdateSubInv(invertSub, false);
   UpdateisWeakBass(forceLarge, false);
   UpdateAllPass(noAllpass, false);
+  UpdateDialogEn(dialogEn, false);
   document.getElementById('bassFillSlider').addEventListener('input', function (e) {
     const normalizedValue = e.target.value.replace(',', '.');
     UpdateBassFill(parseFloat(normalizedValue), false);
@@ -3792,6 +3844,9 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   document.getElementById('disableAllPass').addEventListener('change', function (event) {
     UpdateAllPass(event.target.checked, false);
+  });
+  document.getElementById('enhanceDialog').addEventListener('change', function (event) {
+    UpdateDialogEn(event.target.checked, false);
   });
   const rolloffToggle = document.getElementById('enableRolloff');
   const rolloffFreq = document.getElementById('rolloffFreqInput');
@@ -4151,6 +4206,11 @@ function UpdateAllPass(disableUP, syncToggle) {
   if (syncToggle) {
     document.getElementById('disableAllPass').checked = disableUP;
   }}
+function UpdateDialogEn(disableDE, syncToggle) {
+  dialogEn = disableDE;
+  if (syncToggle) {
+    document.getElementById('enhanceDialog').checked = disableDE;
+  }}
 function UpdateenableInversion(disableInv, syncToggle) {
   enableInversion = disableInv;
   if (syncToggle) {
@@ -4161,14 +4221,11 @@ addCenter = centerAdd;
 if (syncToggle) {
   document.getElementById('prioCenter').checked = centerAdd;
 }}
-
-noSubInv
 function UpdateSubInv(invSub, syncToggle) {
 invertSub = invSub;
 if (syncToggle) {
   document.getElementById('noSubInv').checked = invSub;
 }}
-
 async function updateAPI(endpoint, bodyValue) {
   const url = `http://localhost:4735/application/${endpoint}`;
   await fetch(url, {

@@ -456,7 +456,7 @@ jobs:
 
           # Verify tag exists before pushing
           if git rev-parse "v$NEW_VERSION" >/dev/null 2>&1; then
-            git push origin "v$NEW_VERSION" --force
+            git push origin "v$NEW_VERSION"
             echo "✅ Pushed tag v$NEW_VERSION"
           else
             echo "❌ Tag v$NEW_VERSION does not exist"

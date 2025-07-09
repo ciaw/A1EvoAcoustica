@@ -107,6 +107,34 @@ and noninfringement. Use at your own risk.
     box-shadow: 0 14px 30px rgba(21, 128, 61, 0.6);
     transform: translateY(-2px) scale(1.03);
   }
+  .button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    background: linear-gradient(45deg, #6B7280, #6B7280);
+    color: #9CA3AF;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+    transform: none;
+  }
+  .button2:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    background: linear-gradient(45deg, #6B7280, #6B7280);
+    color: #9CA3AF;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+    transform: none;
+  }
+  .button:disabled:hover {
+    background: linear-gradient(45deg, #6B7280, #6B7280);
+    color: #9CA3AF;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+    transform: none;
+  }
+  .button2:disabled:hover {
+    background: linear-gradient(45deg, #6B7280, #6B7280);
+    color: #9CA3AF;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+    transform: none;
+  }
   .link-container {
     display: flex;
     justify-content: center;
@@ -956,6 +984,9 @@ async function extractMeasurements() {
     console.info('No file selected.');
     return;
   }
+  
+  // Disable the start optimization button after user confirms file selection
+  document.getElementById('startEvo').disabled = true;
   jName = file.name;
   jType = jName.split('.').pop();
   console.info(`Extracting measurements from ${jName}...`);
@@ -1173,6 +1204,9 @@ async function extractMeasurements() {
       console.error("Measurement extraction and sending failed:", error.message);
       throwError(error.message || "An unexpected error occurred during measurement processing.");
   } finally {
+      // Re-enable the start optimization button after extraction completes or fails
+      document.getElementById('startEvo').disabled = false;
+      
       if (inv_micCal && inv_micCal.length > 0) inv_micCal.length = 0;
   }}
 async function inputFile(file) {

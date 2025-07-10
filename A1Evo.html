@@ -411,7 +411,7 @@ and noninfringement. Use at your own risk.
     align-items: center;
     gap: 6px;
     margin-top: 1rem;
-	margin-bottom: 2rem;  /* Added this line */
+	  margin-bottom: 2rem;
     font-size: 1rem;
   }
   .rolloff-controls {
@@ -883,7 +883,7 @@ and noninfringement. Use at your own risk.
   </div></div>
 </script><script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/14.0.1/math.min.js"></script><script>
 
-const evoVersion = '8.0.3';
+const evoVersion = '8';
 const baseUrl = 'http://localhost:4735/measurements', speedDelay = 255, maxDistanceLimit = 7.35;
 let micCalFile = new Array(16384).fill(0), audioCtx = null;
 let jsonName = 'receiver_config.avr', jsonType = 'avr', jsonContent = null;
@@ -3124,14 +3124,14 @@ async function refFilter(index, orgIndex) {
     "enabled": true,
     "isAuto": true,
     "frequency": 120,
-    "gaindB": 2,
+    "gaindB": 1,
     "q": 15}, {
     "index": 2,
     "type": "PK",
     "enabled": true,
     "isAuto": true,
     "frequency": 240,
-    "gaindB": 3,
+    "gaindB": 2,
     "q": 15}, {
     "index": 3,
     "type": "PK",
@@ -3158,15 +3158,13 @@ async function refFilter(index, orgIndex) {
     await new Promise(resolve => setTimeout(resolve, speedDelay / 4));
     await postNext('Generate predicted measurement', mpIndex + 6);
     await new Promise(resolve => setTimeout(resolve, speedDelay / 4));
-    await postDelete(mpIndex + 6);
-  }
+    await postDelete(mpIndex + 6);}
   if (allpassQ[orgIndex] != null && allpassQ[orgIndex] != 0) {
     await postSafe(`${baseUrl}/${mpIndex + 6}/filters`, {filters: [{index: 1, enabled: true, isAuto: false, frequency: customCrossover[orgIndex], q: allpassQ[orgIndex], type: 'All pass'}]}, 'Filters set');
     await new Promise(resolve => setTimeout(resolve, speedDelay / 4));
     await postNext('Generate predicted measurement', mpIndex + 6);
     await new Promise(resolve => setTimeout(resolve, speedDelay / 4));
-    await postDelete(mpIndex + 6);
-  }
+    await postDelete(mpIndex + 6);}
   await postNext('Smooth', mpIndex + 6, {smoothing: "None"});
   await postSafe(`${baseUrl}/${mpIndex + 6}/ir-windows`, {leftWindowType: "Rectangular", rightWindowType: "Rectangular", leftWindowWidthms: 0, rightWindowWidthms: rightWindowWidth, refTimems: 0, addFDW: false}, "Update processed");
   await postNext("Trim IR to windows", mpIndex + 6);

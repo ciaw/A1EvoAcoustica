@@ -834,19 +834,19 @@ and noninfringement. Use at your own risk.
   <label class="checkbox-label">
   <input type="checkbox" id="enhanceDialog">Enhance dialogue clarity
   </label>
-  <div class="tooltip">Increase dialog clarity on center channel</div>
+  <div class="tooltip">Increase dialog clarity if problematic center channel</div>
   </div>
   <div class="tooltip-container">
   <label class="checkbox-label">
   <input type="checkbox" id="disableAllPass">Enable allpass filters
   </label>
-  <div class="tooltip">Evaluate and add allpass filters to minimize dips below target curve</div>
+  <div class="tooltip">Add allpass filters to minimize dips below target curve</div>
   </div>
   <div class="tooltip-container">
   <label class="checkbox-label">
   <input type="checkbox" id="weakBass">Enable double bass
   </label>
-  <div class="tooltip">Set 'LFE + Main' bass mode and front mains as 'full range'</div>
+  <div class="tooltip">Set fronts + sub double bass mode</div>
   </div>
   </div>
   <div class="rolloff-wrapper tooltip-container">
@@ -883,7 +883,7 @@ and noninfringement. Use at your own risk.
   </div></div>
 </script><script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/14.0.1/math.min.js"></script><script>
 
-const evoVersion = '8.0.5';
+const evoVersion = '8';
 const baseUrl = 'http://localhost:4735/measurements', speedDelay = 255, maxDistanceLimit = 7.35;
 let micCalFile = new Array(16384).fill(0), audioCtx = null;
 let jsonName = 'receiver_config.avr', jsonType = 'avr', jsonContent = null;
@@ -3131,7 +3131,7 @@ async function refFilter(index, orgIndex) {
     "enabled": true,
     "isAuto": true,
     "frequency": 240,
-    "gaindB": 2,
+    "gaindB": 1,
     "q": 15}, {
     "index": 3,
     "type": "PK",
@@ -3152,7 +3152,7 @@ async function refFilter(index, orgIndex) {
     "enabled": true,
     "isAuto": true,
     "frequency": 50,
-    "gaindB": -3,
+    "gaindB": -2,
     "q": 5}];
     await postSafe(`${baseUrl}/${mpIndex + 6}/filters`, {filters: cFilters}, 'Filters set');
     await new Promise(resolve => setTimeout(resolve, speedDelay / 4));

@@ -883,7 +883,7 @@ and noninfringement. Use at your own risk.
   </div></div>
 </script><script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/14.0.1/math.min.js"></script><script>
 
-const evoVersion = '8.0.8';
+const evoVersion = '8';
 const baseUrl = 'http://localhost:4735/measurements', speedDelay = 255, maxDistanceLimit = 7.35;
 let micCalFile = new Array(16384).fill(0), audioCtx = null;
 let jsonName = 'receiver_config.avr', jsonType = 'avr', jsonContent = null;
@@ -4056,7 +4056,7 @@ function readContents() {
                           "X1400H", "X1500H", "X2400H", "X2500H", "X3400H", "X3500H", "X4300H", "X4400H", "X4500H", "X6300H", "X6400H", "X6500H", "AV7703",
                           "AV7704", "AV7705", "NR1608", "NR1609", "SR5012", "SR5013", "SR6012", "SR6013", "SR7011", "SR7012", "SR7013", "SR8012" ];
   const griffinLite = ["X8500H", "AV8805", "X6700H", "X4700H", "AV7706", "SR8015", "SR7015", " AV 10", "AV 20", "VR-A1H", "VC-A1H", "X3800H", "X4800H", "EMA 30", "EMA 40", "EMA 50", "X6800H", "R-A10H", "C-A10H"];
-  const models70xo = ["A-900H", "MA 70S", "-S970H", "X2800H","-S670H", "AV 10", "AV 20", "VR-A1H", "VC-A1H", "X3800H", "X4800H", "EMA 30", "EMA 40", "EMA 50", "X6800H", "R-A10H", "C-A10H"];
+  const models70xo = ["A-900H", "MA 70S", "-S970H", "X2800H","-S670H", " AV 10", " AV 20", "VR-A1H", "VC-A1H", "X3800H", "X4800H", "EMA 30", "EMA 40", "EMA 50", "X6800H", "R-A10H", "C-A10H"];
   const baseFreq = [40, 60, 80, 90, 100, 110, 120, 150, 200, 250];
   const extraFreq = 180;
   const extraFreq2 = 70;

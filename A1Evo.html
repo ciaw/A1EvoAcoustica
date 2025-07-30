@@ -66,9 +66,9 @@ and noninfringement. Use at your own risk.
     transform: scale(1);
     transition: all 0.3s ease;
   }
-  .card:hover {
+  /* .card:hover {
     transform: scale(1.02);
-  }
+  } */
   .button {
     display: inline-block;
     padding: 16px 16px;
@@ -681,7 +681,7 @@ and noninfringement. Use at your own risk.
   <div id="manualLoadError" class="manual-error-message"></div>
   </div>
   <button class="expert-button" onclick="toggleExpertDrawer()">Advanced Settings</button>
-  <div id="expertDrawer" class="drawer">
+  <div id="expertDrawer" class="drawer open">
   <h3>
   <span style="color: #ef4444; font-weight: 350;">Warning – decibels ahead! Messing with these settings may hertz your earz.</span>
   </h3>
@@ -702,7 +702,7 @@ and noninfringement. Use at your own risk.
   <span id="subBoostValue">5 dB</span>
   </div>
   <div class="tooltip-container">
-  <input type="range" id="subBoostSlider" class="slider" min="0" max="6" step="0.1" value="0">
+  <input type="range" id="subBoostSlider" class="slider" min="0" max="6" step="0.1" value="3.0">
   <div class="tooltip">Maximum allowed boost amount for subwoofer EQ filters - 0dB: allows only cut filters</div>
   </div></div>
   <div class="crossover-slider">
@@ -723,7 +723,7 @@ and noninfringement. Use at your own risk.
   <span id="minFreqValueFR">40 Hz</span>
   </div>
   <div class="tooltip-container">
-  <input type="range" id="minFreqSliderFR" class="slider" min="0" max="7" step="1" value="0">
+  <input type="range" id="minFreqSliderFR" class="slider" min="0" max="7" step="1" value="3">
   <div class="tooltip">Select mimimum search frequency for front speakers' crossover optimization</div>
   </div>
   </div>
@@ -733,7 +733,7 @@ and noninfringement. Use at your own risk.
   <span id="maxFreqValueFR">250 Hz</span>
   </div>
   <div class="tooltip-container">
-  <input type="range" id="maxFreqSliderFR" class="slider" min="0" max="10" step="1" value="10">
+  <input type="range" id="maxFreqSliderFR" class="slider" min="0" max="10" step="1" value="3">
   <div class="tooltip">Select maximum search frequency for front speakers' crossover optimization</div>
   </div>
   </div>
@@ -747,7 +747,7 @@ and noninfringement. Use at your own risk.
   <span id="minFreqValueC">40 Hz</span>
   </div>
   <div class="tooltip-container">
-  <input type="range" id="minFreqSliderC" class="slider" min="0" max="7" step="1" value="0">
+  <input type="range" id="minFreqSliderC" class="slider" min="0" max="7" step="1" value="3">
   <div class="tooltip">Select mimimum search frequency for center speaker crossover optimization</div>
   </div>
   </div> 
@@ -757,7 +757,7 @@ and noninfringement. Use at your own risk.
   <span id="maxFreqValueC">250 Hz</span>
   </div>
   <div class="tooltip-container">
-  <input type="range" id="maxFreqSliderC" class="slider" min="0" max="10" step="1" value="10">
+  <input type="range" id="maxFreqSliderC" class="slider" min="0" max="10" step="1" value="3">
   <div class="tooltip">Select maximum search frequency for center speaker crossover optimization</div>
   </div>
   </div>
@@ -771,7 +771,7 @@ and noninfringement. Use at your own risk.
   <span id="minFreqValue">40 Hz</span>
   </div>
   <div class="tooltip-container">
-  <input type="range" id="minFreqSlider" class="slider" min="0" max="7" step="1" value="0">
+  <input type="range" id="minFreqSlider" class="slider" min="0" max="7" step="1" value="3">
   <div class="tooltip">Select mimimum search frequency for surround speakers' crossover optimization</div>
   </div>
   </div>
@@ -781,7 +781,7 @@ and noninfringement. Use at your own risk.
   <span id="maxFreqValue">250 Hz</span>
   </div>
   <div class="tooltip-container">
-  <input type="range" id="maxFreqSlider" class="slider" min="0" max="10" step="1" value="10">
+  <input type="range" id="maxFreqSlider" class="slider" min="0" max="10" step="1" value="3">
   <div class="tooltip">Select maximum search frequency for surround speakers' crossover optimization</div>
   </div>
   </div>
@@ -795,7 +795,7 @@ and noninfringement. Use at your own risk.
   <span id="minFreqValueA">40 Hz</span>
   </div>
   <div class="tooltip-container">
-  <input type="range" id="minFreqSliderA" class="slider" min="0" max="7" step="1" value="0">
+  <input type="range" id="minFreqSliderA" class="slider" min="0" max="7" step="1" value="3">
   <div class="tooltip">Select mimimum search frequency for height and front wide speakers' crossover optimization</div>
   </div>
   </div> 
@@ -805,7 +805,7 @@ and noninfringement. Use at your own risk.
   <span id="maxFreqValueA">250 Hz</span>
   </div>
   <div class="tooltip-container">
-  <input type="range" id="maxFreqSliderA" class="slider" min="0" max="10" step="1" value="10">
+  <input type="range" id="maxFreqSliderA" class="slider" min="0" max="10" step="1" value="3">
   <div class="tooltip">Select max search frequency for height/front-wide speakers' xover optimization</div>
   </div>
   </div>
@@ -820,7 +820,7 @@ and noninfringement. Use at your own risk.
   </div>
   <div class="tooltip-container">
   <label class="checkbox-label">
-  <input type="checkbox" id="noSubInv">Avoid sub inversion
+  <input type="checkbox" id="noSubInv" checked>Avoid sub inversion
   </label>
   <div class="tooltip">Do not invert default subwoofer polarities during optimization</div>
   </div>
@@ -838,7 +838,7 @@ and noninfringement. Use at your own risk.
   </div>
   <div class="tooltip-container">
   <label class="checkbox-label">
-  <input type="checkbox" id="disableAllPass">Enable allpass filters
+  <input type="checkbox" id="disableAllPass" checked>Enable allpass filters
   </label>
   <div class="tooltip">Add allpass filters to minimize dips below target curve</div>
   </div>
@@ -851,17 +851,17 @@ and noninfringement. Use at your own risk.
   </div>
   <div class="rolloff-wrapper tooltip-container">
   <label class="checkbox-label">
-  <input type="checkbox" id="enableRolloff">Force custom high-pass and low-pass filters for subwoofer(s)
+  <input type="checkbox" id="enableRolloff" checked>Force custom high-pass and low-pass filters for subwoofer(s)
   </label>
   <div class="tooltip">Advanced option for subwooofer(s) with special roll-off profiles (HP: High pass, LP: Low pass, BE: Bessel, BU: Butterworth, L-R: Linkwitz Riley, each order: 6dB/octave slope)</div>
   <div class="rolloff-controls">
   <label class="rolloff-text" for="rolloffFreqInput">HP freq:</label>
-  <input type="number" id="rolloffFreqInput" placeholder="25" min="10" max="60" disabled>
+  <input type="number" id="rolloffFreqInput" value="16" min="10" max="60">
   <span class="rolloff-text">Hz&nbsp;</span>
   <label class="rolloff-text" for="rolloffSlopeSelect">&nbsp;HP slope:</label>
-  <select id="rolloffSlopeSelect" disabled></select>
+  <select id="rolloffSlopeSelect"></select>
   <label class="rolloff-text" for="lpf4lfeSlopeSelect">&nbsp;LP freq:</label>
-  <select id="lpf4lfeSlopeSelect" disabled></select>
+  <select id="lpf4lfeSlopeSelect"></select>
   </div>
   </div>
   </div>
@@ -884,15 +884,15 @@ and noninfringement. Use at your own risk.
 </script><script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/14.0.1/math.min.js"></script><script>
 
 const evoVersion = '8.0.10';
-const baseUrl = 'http://localhost:4735/measurements', speedDelay = 255, maxDistanceLimit = 7.35;
+const baseUrl = 'http://localhost:4735/measurements', speedDelay = 255, maxDistanceLimit = 3.00;
 let micCalFile = new Array(16384).fill(0), audioCtx = null;
 let jsonName = 'receiver_config.avr', jsonType = 'avr', jsonContent = null;
 let folderPath, localAppPath = null, ocafileName, sOs = null, isCirrusLogic, isGriffin, freqIndex = [], distFL = null, modelDelayLimit, minDistAccuracy, mSec = [], hardNegative, hardPositive, xt32 = true, xt = false;
 let nSpeakers = null, nSubs = null, subMinTrim = -12, subMaxTrim = 12, lpf4LFE, filterCompensation, targetCurvePath, targetLevel, responseTarget, dataTarget, tcName, rewMaxLimit, isPreProcessed = false, isAutomated;
 let customLevel = [], commandId = [], customDistance = [], customInvert = [], customCrossover = [], customFilter = [], deqFilter = [], subTrim = [], customMinFreq = [], customMaxFreq = [], customMinFreqFR = [], customMaxFreqFR = [], customMinFreqC = [], customMaxFreqC = [], customMinFreqA = [], customMaxFreqA = [], customMargin = [], subAllPassQ = null, allpassQ = [], hiPass, hType;
-const defaultSlope = "L-R4";
+const defaultSlope = "BU8";
 const dbValues = [-12, -15, -18, -20, -25];
-var subBoost = 0, bassFill = 0, levelLowVol = 2, enableInversion = false, addCenter = false, invertSub = false, forceLarge = false, noAllpass = false, dialogEn = false, minFreq = 40, maxFreq = 250, minFreqFR = 40, maxFreqFR = 250, minFreqC = 40, maxFreqC = 250,  minFreqA = 40, maxFreqA = 250, subRolloffEnabled = false, subRolloffFreq = null, subRolloffSlope = defaultSlope, lpf4lfeValue = null;
+var subBoost = 3, bassFill = 0, levelLowVol = 2, enableInversion = false, addCenter = false, invertSub = true, forceLarge = false, noAllpass = true, dialogEn = false, minFreq = 80, maxFreq = 80, minFreqFR = 80, maxFreqFR = 80, minFreqC = 80, maxFreqC = 80,  minFreqA = 80, maxFreqA = 80, subRolloffEnabled = true, subRolloffFreq = 16, subRolloffSlope = defaultSlope, lpf4lfeValue = 120;
 
 function toggleExpertDrawer() {
   const drawer = document.getElementById('expertDrawer');
@@ -3088,7 +3088,7 @@ async function refFilter(index, orgIndex) {
   await postNext('Smooth', index, {smoothing: "Var"});
   const mp = await postNext('Minimum phase version', index, {'include cal': true, 'append lf tail': false, 'append hf tail': false, 'frequency warping': false, 'replicate data': true});
   mpIndex = parseInt(Object.keys(mp.results)[0], 10);
-  await postNext('Arithmetic', [nSpeakers + 2, mpIndex], {function: "A / B", maxGain: 0, lowerLimit: (!xt32 && !xt) ? 375 : 16, upperLimit: (!xt32 && !xt) ? 500 : 252});
+  await postNext('Arithmetic', [nSpeakers + 2, mpIndex], {function: "A / B", maxGain: 6, lowerLimit: (!xt32 && !xt) ? 375 : 16, upperLimit: (!xt32 && !xt) ? 500 : 252});
   await new Promise(resolve => setTimeout(resolve, speedDelay));
   await postNext('Smooth', mpIndex + 1, {smoothing: "None"});
   await postNext('Minimum phase version', mpIndex + 1, {'include cal': true, 'append lf tail': false, 'append hf tail': false, 'frequency warping': false, 'replicate data': true});
@@ -3099,7 +3099,7 @@ async function refFilter(index, orgIndex) {
   await new Promise(resolve => setTimeout(resolve, speedDelay / 4));
   await postSafe(`http://localhost:4735/eq/house-curve`, targetCurvePath, 'House curve set');
   await new Promise(resolve => setTimeout(resolve, speedDelay));
-  await postSafe(`http://localhost:4735/eq/match-target-settings`, {startFrequency: (!xt32 && !xt) ? 375 : 200, endFrequency: 12500, individualMaxBoostdB: 3, overallMaxBoostdB: 0, flatnessTargetdB: 1, varyQAbove200Hz: true, allowLowShelf: false, allowHighShelf: true, highShelfMin: -3, highShelfMax: 3}, 'Update processed');
+  await postSafe(`http://localhost:4735/eq/match-target-settings`, {startFrequency: (!xt32 && !xt) ? 375 : 200, endFrequency: 20000, individualMaxBoostdB: 3, overallMaxBoostdB: 0, flatnessTargetdB: 1, varyQAbove200Hz: true, allowLowShelf: false, allowHighShelf: true, highShelfMin: -3, highShelfMax: 3}, 'Update processed');
   await new Promise(resolve => setTimeout(resolve, speedDelay / 4));
   await postSafe(`${baseUrl}/${mpIndex + 3}/room-curve-settings`, {addRoomCurve: false}, 'Update processed');
   await new Promise(resolve => setTimeout(resolve, speedDelay / 4));
@@ -3317,7 +3317,7 @@ async function processSubConfig(subIndices) {
   let indexA = subIndices[0];
   for (let i = 1; i < subIndices.length; i++) {
     const indexB = subIndices[i];
-    const result = await optimizeSubs(indexA, indexB, maxNegativeDelay, maxPositiveDelay, 250);
+    const result = await optimizeSubs(indexA, indexB, maxNegativeDelay, maxPositiveDelay, 150);
     const {bestDelay, bestInvert} = result;
     finalScore = result.finalScore;
     const msDelay = bestDelay;
@@ -4091,25 +4091,25 @@ function readContents() {
   const maxSlider = document.getElementById('maxFreqSlider');
   maxSlider.max = customMaxFreq.length - 1;
   maxSlider.min = 0;
-  UpdateMaxFreq(customMaxFreq[customMaxFreq.length - 1], true);
+  // UpdateMaxFreq(customMaxFreq[customMaxFreq.length - 1], true);
   customMinFreqFR = freqIndex.filter(freq => freq < 180);
   customMaxFreqFR = freqIndex.filter(freq => freq >= 40);
   const maxSliderFR = document.getElementById('maxFreqSliderFR');
   maxSliderFR.max = customMaxFreqFR.length - 1;
   maxSliderFR.min = 0;
-  UpdateMaxFreqFR(customMaxFreqFR[customMaxFreqFR.length - 1], true);
+  // UpdateMaxFreqFR(customMaxFreqFR[customMaxFreqFR.length - 1], true);
 	customMinFreqC = freqIndex.filter(freq => freq < 180);
   customMaxFreqC = freqIndex.filter(freq => freq >= 40);
   const maxSliderC = document.getElementById('maxFreqSliderC');
   maxSliderC.max = customMaxFreqC.length - 1;
   maxSliderC.min = 0;
-  UpdateMaxFreqC(customMaxFreqC[customMaxFreqC.length - 1], true);
+  // UpdateMaxFreqC(customMaxFreqC[customMaxFreqC.length - 1], true);
   customMinFreqA = freqIndex.filter(freq => freq < 180);
   customMaxFreqA = freqIndex.filter(freq => freq >= 40);
   const maxSliderA = document.getElementById('maxFreqSliderA');
   maxSliderA.max = customMaxFreqA.length - 1;
   maxSliderA.min = 0;
-  UpdateMaxFreqA(customMaxFreqA[customMaxFreqA.length - 1], true);
+  // UpdateMaxFreqA(customMaxFreqA[customMaxFreqA.length - 1], true);
   distFL = 2.75;
   console.info(`Model specific speed of sound setting: ${sOs} m/s`);
   console.info(`Model is capable of setting 180Hz crossover: ${!no180}`);
